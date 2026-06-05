@@ -27,11 +27,14 @@ Build a high-performance, minimalist HTML5 Canvas web application focusing on th
 
 ### Tasks
 1.  **Dual-Canvas System**: Create two overlapping `<canvas>` elements:
-    *   *Layer A (Bottom)*: Trajectory canvas. Drawn sequentially and faded gradually.
-    *   *Layer B (Top)*: Interactive/Pendulum canvas. Cleared and redrawn completely every frame.
-2.  **Trajectory Rendering (Accumulative Fading)**: 
-    *   Draw the trajectory on Layer A using a simple trail effect (e.g., drawing a semi-transparent background fill like `rgba(0,0,0,0.02)` on Layer A every frame, or using a capped coordinate buffer with fading opacity).
-3.  **Visual Styling**: Use a sleek dark theme (e.g., deep charcoal background, glowing neon blue/cyan line for the trajectory).
+    *   *Layer A (Bottom)*: Trajectory canvas. Redrawn every frame with batched line segments.
+    *   *Layer B (Top)*: Pendulum canvas. Cleared and redrawn completely every frame.
+2.  **Trajectory Rendering (Fading Line Segments)**:
+    *   Store a capped coordinate buffer (`TRAIL_LENGTH = 1200` points per bob).
+    *   Each frame, redraw the full trail on Layer A as connected line segments grouped into `TRAIL_BATCHES = 80` opacity levels. Older batches are more transparent (`α ≈ 0.02`), newer batches are bright (`α ≈ 0.90`).
+    *   Both bobs leave trails in their respective bob colors.
+    *   Layer A is `clearRect`'d before each redraw so old trail pixels don't accumulate — no blurry afterimage.
+3.  **Visual Styling**: Use a sleek dark theme (e.g., deep charcoal background `#0a0a0f`, glowing neon blue/cyan `#00d4ff` for the tip trajectory, muted blue `#6080c0` for the upper bob trajectory).
 
 ### Acceptance Criteria
 *   The trajectory leaves a beautiful, smooth, fading tail.

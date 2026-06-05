@@ -1,6 +1,6 @@
 /* ============================================================
    Chaotic Art — Double Pendulum Visualizer
-   Phase 1: Physics & High-DPI Foundation
+   Phase 2 — Dual-Layer Canvas & Trajectory Aesthetics
    ============================================================ */
 
 // --- Constants --------------------------------------------------
@@ -8,9 +8,9 @@ const G = 9.81;                  // gravitational acceleration (m/s²)
 const PHYS_L1 = 1.5;             // rod 1 length in simulation units (meters)
 const PHYS_L2 = 1.5;             // rod 2 length in simulation units (meters)
 const SUB_STEPS = 4;             // RK4 sub-steps per frame for energy stability
-const TRAIL_LENGTH = 1200;       // max trail points (~20 s at 60 fps)
-const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading trail
 const M1 = 10, M2 = 10;         // pendulum masses (kg, only matters for inertia)
+const TRAIL_LENGTH = 1200;       // max trail points per bob (~20 s at 60 fps)
+const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 
 // --- Pendulum state ---------------------------------------------
 const state = {
@@ -22,29 +22,38 @@ const state = {
     originY: 0,                // pivot y (px)
     bob1X: 0, bob1Y: 0,       // bob 1 position (px)
     bob2X: 0, bob2Y: 0,       // bob 2 position (px)
-    trail1: [],                // bob 1 trajectory points [{x, y}]
-    trail2: [],                // bob 2 trajectory points [{x, y}]
+    trail1: [],                // bob 1 trajectory [{x, y}]
+    trail2: [],                // bob 2 trajectory [{x, y}]
 };
 
 // Scale factor: pixels per simulation-unit-length, set on resize
 let pxPerUnit = 0;
 
-// --- Canvas (HiDPI) ---------------------------------------------
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let cw = 0, ch = 0;  // logical (CSS) width/height
+// --- Canvas (HiDPI) — dual layer ---------------------------------
+// Layer A (bottom) – trajectory lines, accumulates each frame.
+// Layer B (top)    – pendulum, cleared and redrawn every frame.
+const canvasA = document.getElementById('canvas-a');
+const canvasB = document.getElementById('canvas-b');
+const ctxA = canvasA.getContext('2d');
+const ctxB = canvasB.getContext('2d');
+let cw = 0, ch = 0;            // logical (CSS) width/height
 
 function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     cw = window.innerWidth;
     ch = window.innerHeight;
-    canvas.width = cw * dpr;
-    canvas.height = ch * dpr;
-    canvas.style.width = cw + 'px';
-    canvas.style.height = ch + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Compute pixel scale so the full span (~2 * PHYS_L) fits nicely
+    // Both canvases get identical HiDPI treatment
+    [canvasA, canvasB].forEach(c => {
+        c.width = cw * dpr;
+        c.height = ch * dpr;
+        c.style.width = cw + 'px';
+        c.style.height = ch + 'px';
+    });
+    ctxA.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxB.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Compute pixel scale so the full span (~2 × PHYS_L) fits nicely
     const minDim = Math.min(cw, ch);
     pxPerUnit = minDim * 0.18 / PHYS_L1;
 
@@ -167,8 +176,14 @@ function stepPhysics() {
 }
 
 // --- Rendering --------------------------------------------------
+// Layer A — trail.  Not cleared between frames; we redraw the whole trail
+// on top of whatever was there, so old pixels are overwritten correctly.
+// Layer B — pendulum.  Cleared and redrawn fresh every frame.
 
-/** Draw a fading trail from a point array with the given hex color. */
+/**
+ * Draw a fading trail of connected line segments on Layer A.
+ * Older segments are more transparent; newer segments are brighter.
+ */
 function drawTrail(trail, hexColor) {
     const len = trail.length;
     if (len < 2) return;
@@ -190,62 +205,64 @@ function drawTrail(trail, hexColor) {
         const t = (batch + 1) / TRAIL_BATCHES;
         const alpha = 0.02 + t * 0.88;
 
-        ctx.beginPath();
-        ctx.moveTo(trail[segStart].x, trail[segStart].y);
+        ctxA.beginPath();
+        ctxA.moveTo(trail[segStart].x, trail[segStart].y);
         for (let i = segStart + 1; i <= segEnd; i++) {
-            ctx.lineTo(trail[i].x, trail[i].y);
+            ctxA.lineTo(trail[i].x, trail[i].y);
         }
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(4)})`;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+        ctxA.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(4)})`;
+        ctxA.lineWidth = 1.5;
+        ctxA.stroke();
     }
 }
 
-/** Draw the pendulum rods, bobs, and pivot (fully opaque). */
+/** Draw the pendulum rods, bobs, and pivot on Layer B (fully opaque). */
 function drawPendulum() {
     const { originX, originY, bob1X, bob1Y, bob2X, bob2Y } = state;
 
     // Rod 1
-    ctx.beginPath();
-    ctx.moveTo(originX, originY);
-    ctx.lineTo(bob1X, bob1Y);
-    ctx.strokeStyle = '#404060';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctxB.beginPath();
+    ctxB.moveTo(originX, originY);
+    ctxB.lineTo(bob1X, bob1Y);
+    ctxB.strokeStyle = '#404060';
+    ctxB.lineWidth = 2;
+    ctxB.stroke();
 
     // Rod 2
-    ctx.beginPath();
-    ctx.moveTo(bob1X, bob1Y);
-    ctx.lineTo(bob2X, bob2Y);
-    ctx.strokeStyle = '#404060';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctxB.beginPath();
+    ctxB.moveTo(bob1X, bob1Y);
+    ctxB.lineTo(bob2X, bob2Y);
+    ctxB.strokeStyle = '#404060';
+    ctxB.lineWidth = 2;
+    ctxB.stroke();
 
     // Bob 1
-    ctx.beginPath();
-    ctx.arc(bob1X, bob1Y, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#6080c0';
-    ctx.fill();
+    ctxB.beginPath();
+    ctxB.arc(bob1X, bob1Y, 6, 0, Math.PI * 2);
+    ctxB.fillStyle = '#6080c0';
+    ctxB.fill();
 
     // Bob 2 (the "artist")
-    ctx.beginPath();
-    ctx.arc(bob2X, bob2Y, 8, 0, Math.PI * 2);
-    ctx.fillStyle = '#00d4ff';
-    ctx.fill();
+    ctxB.beginPath();
+    ctxB.arc(bob2X, bob2Y, 8, 0, Math.PI * 2);
+    ctxB.fillStyle = '#00d4ff';
+    ctxB.fill();
 
     // Pivot
-    ctx.beginPath();
-    ctx.arc(originX, originY, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
+    ctxB.beginPath();
+    ctxB.arc(originX, originY, 4, 0, Math.PI * 2);
+    ctxB.fillStyle = '#ffffff';
+    ctxB.fill();
 }
 
 function draw() {
-    // Clear completely — no afterimages from previous frames
-    ctx.clearRect(0, 0, cw, ch);
+    // Layer A: redraw the full trail (old trail points are overwritten)
+    ctxA.clearRect(0, 0, cw, ch);
+    drawTrail(state.trail1, '#6080c0');
+    drawTrail(state.trail2, '#00d4ff');
 
-    drawTrail(state.trail1, '#6080c0');  // bob 1 trail in its own color
-    drawTrail(state.trail2, '#00d4ff');  // bob 2 trail in its own color
+    // Layer B: fresh pendulum every frame
+    ctxB.clearRect(0, 0, cw, ch);
     drawPendulum();
 }
 
