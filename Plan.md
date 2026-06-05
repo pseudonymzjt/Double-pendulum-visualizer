@@ -137,21 +137,30 @@ When dragging a bob while paused, the angle snaps to the nearest multiple of 15�
 ## Stage 7 — N-Link Pendulum Extension (Multi-Bob Chains)
 
 ### Objective
-Transition the physics engine from a rigid "double" pendulum to a generalized "N-link" pendulum, allowing users to dynamically add or remove bobs to create Triple, Quadruple, or arbitrary joint pendulums.
+Replace RK4 angle-based physics with Verlet integration + distance constraints, allowing any pendulum to have N links (rods + bobs) through dynamic joint add/remove.
 
 ### Tasks
-1. **Adaptive Physics Engine**:
-   * *Technical Choice*: Instead of hardcoding complex Lagrangian equations for a triple pendulum (which are mathematically overwhelming and rigid), refactor the physics solver to use **Verlet Integration with Distance Constraints** (similar to a rope or ragdoll physics) [2]. This allows arbitrary $N$-bobs to be simulated with high stability and minimal code complexity [2].
-2. **Dynamic Joint Modifier**:
-   * Introduce a visual controls on the selected pendulum:
-     * A "Add Joint ($+$)" button at the end of the last bob to attach an extra rod and bob.
-     * A "Remove Joint ($-$)" button to detach the outermost bob.
-3. **Multi-Joint Interaction**:
-   * Ensure that dragging any bob in an $N$-link chain correctly updates the angles and constraints of the parent/child bobs in real-time.
-4. **Aesthetic Scaling**:
-   * Automatically scale down the rod lengths and bob sizes as more links are added (e.g., $L_{new} = L_{parent} \times 0.85$) to keep the entire structure within the screen bounds.
+1. **Verlet Physics Engine**: Each pendulum stores an array of `particles` (with current and previous position for implicit velocity) and `constraints` (pairwise distance constraints). Each frame:
+   * Apply gravity to all particles (except the fixed pivot).
+   * Run the constraint solver (`CONSTRAINT_ITERS = 10` iterations) to enforce rod lengths.
+   * Pin the pivot particle to `PIVOT`.
+2. **Dynamic Joint Modifier**: Selected pendulums get `➕` and `➖` buttons in the contextual menu. `➕` extends the chain by one link (direction = last segment direction, length = last link length × `LINK_SCALE = 0.85`). `➖` removes the outermost link (minimum 2 links).
+3. **Multi-Joint Drag**: `hitTestBob()` checks all particles in the chain (reverse order, tip first). Dragging a particle pins it to the cursor while the constraint solver adjusts the rest of the chain in real-time.
+4. **Aesthetic Scaling**: Each new link is `LINK_SCALE = 0.85` times the previous link's length. Bob radii scale similarly (`r * LINK_SCALE^(i-1)`), so deeper bobs are smaller. The outermost bob retains `color2`; inner bobs use `color1`.
+
+### Implementation Notes
+- `buildChain(nLinks, thetaDeg)` constructs particles and constraints from scratch for a given angle. Used on reset, resize, and initial creation.
+- `syncBobPositions(p)` copies the first and last particle positions into `bob1X/Y` and `bob2X/Y` for backward compatibility with selection rings and angle display.
+- A single `trail` array per pendulum tracks only the tip (outermost particle) with velocity-based line width.
+- The `rebuildChain` function is used by `resetSimulation` to restore the default shape at `DEFAULT_ANGLE_DEG = 135°`.
+
+### Backward Compatibility
+- Existing Stage 6 features (multi-pendulum array, selection, visibility, color cycling, deletion) carry over unchanged.
+- Chaos mode still spawns Pendulum B at a microscopic offset from Pendulum A.
+- Slow-motion, save artwork, clear trails all work as before.
+- The angle display now shows N entries (`θ₁`, `θ₂`, … `θₙ`) for N-link pendulums.
 
 ### Acceptance Criteria
-* Users can dynamically add links to create a Triple ($N=3$) or Quadruple ($N=4$) pendulum.
-* The Verlet constraint physics remain stable and do not jitter or explode even with $N=5$ links.
-* The trajectory tracker accurately follows only the *outermost* bob of the chain to draw the final chaotic path.
+* ✅ Users can add links up to N=5 without visible jitter or explosion.
+* ✅ Verlet constraints remain stable — sub-stepping (4×) and `CONSTRAINT_ITERS` (10) provide sufficient damping.
+* ✅ Only the outermost bob's path is recorded as the trail.
