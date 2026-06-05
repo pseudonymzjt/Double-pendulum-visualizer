@@ -255,11 +255,12 @@ function toggleChaos() {
 }
 
 function resetSimulation() {
-    const a = pendulums[0];
-    const n = a.constraints.length;
-    rebuildChain(a, n, DEFAULT_ANGLE_DEG);
-    syncBobPositions(a);
-    for (const t of a.trails) t.length = 0;
+    for (const p of pendulums) {
+        const n = p.constraints.length;
+        rebuildChain(p, n, DEFAULT_ANGLE_DEG);
+        syncBobPositions(p);
+        for (const t of p.trails) t.length = 0;
+    }
 
     if (chaosMode) {
         if (pendulums.length > 1) pendulums.pop();
@@ -465,25 +466,36 @@ function hitTestBob(mx, my) {
 
 function dragParticle(p, partIdx, mx, my) {
     if (partIdx === 0) return;     // never drag pivot
-    // Move the particle to mouse and pin it (Verlet constraints handle the chain)
-    p.particles[partIdx].x = mx;
-    p.particles[partIdx].y = my;
-    p.particles[partIdx].px = mx;
-    p.particles[partIdx].py = my;
-    // Satisfy constraints one-shot to keep links intact
-    for (let iter = 0; iter < CONSTRAINT_ITERS; iter++) {
-        for (const c of p.constraints) {
-            const a = p.particles[c.a];
-            const b = p.particles[c.b];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist < 0.001) continue;
-            const diff = (c.len - dist) / dist;
-            const cx = dx * 0.5 * diff;
-            const cy = dy * 0.5 * diff;
-            if (c.a !== 0 && c.a !== partIdx) { a.x -= cx; a.y -= cy; }
-            if (c.b !== partIdx) { b.x += cx; b.y += cy; }
+
+    if (partIdx === p.particles.length - 1) {
+        // Dragging the tip → rotate the entire chain from the pivot
+        // so inner bobs stay in place relative to the pivot.
+        const rawAngle = Math.atan2(mx - PIVOT.x, my - PIVOT.y) * 180 / Math.PI;
+        const angleDeg = snapAngle(rawAngle);
+        rebuildChain(p, p.constraints.length, angleDeg);
+    } else {
+        // Dragging an inner particle → pin it and solve constraints
+        p.particles[partIdx].x = mx;
+        p.particles[partIdx].y = my;
+        p.particles[partIdx].px = mx;
+        p.particles[partIdx].py = my;
+        for (let iter = 0; iter < CONSTRAINT_ITERS; iter++) {
+            for (const c of p.constraints) {
+                const a = p.particles[c.a];
+                const b = p.particles[c.b];
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < 0.001) continue;
+                const diff = (c.len - dist) / dist;
+                const cx = dx * 0.5 * diff;
+                const cy = dy * 0.5 * diff;
+                if (c.a !== 0 && c.a !== partIdx) { a.x -= cx; a.y -= cy; }
+                if (c.b !== partIdx) { b.x += cx; b.y += cy; }
+            }
+            // Re-pin the dragged particle so it doesn't drift
+            p.particles[partIdx].x = mx;
+            p.particles[partIdx].y = my;
         }
     }
     syncBobPositions(p);

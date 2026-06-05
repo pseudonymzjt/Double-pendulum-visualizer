@@ -363,3 +363,27 @@ For N-link pendulums, the display shows N entries: `θ₁ xx° θ₂ xx° … θ
 - ✅ Users can add links up to N=5 without visible jitter or explosion.
 - ✅ Verlet constraints remain stable — 4 sub-steps × 10 iterations = 40 solves/frame.
 - ✅ All particles leave trails; inner trails are shorter and dimmer than the tip's trail.
+
+---
+
+# Bugfix Round — Reset All Pendulums & Drag Stability
+
+## Bug 1: Reset only touched pendulums[0]
+
+`resetSimulation()` iterated only over `pendulums[0]`, leaving any extra pendulums (added via `+`) at their current angles with trails untouched.
+
+**Fix**: Changed `resetSimulation()` to loop over every pendulum in the array, rebuilding each chain at `DEFAULT_ANGLE_DEG (135°)`, syncing bob positions, and clearing all trail arrays. Chaos mode still removes Pendulum B and resets chaosMode to false.
+
+## Bug 2: Dragging the tip moved the inner bob unpredictably
+
+When dragging the tip particle, the Verlet constraint solver's 50/50 correction split pushed the inner bob around: constraint 0→1 moved particle 1 (only free end), then constraint 1→2 also moved particle 1 (only free end), causing it to drift from its pivot-aligned position. The user reported: *"when trying to adjust the position of the second ball, the first ball moves accordingly. It should not. If the first is moved, the second should be moved and that's correct."*
+
+**Root cause**: The constraint solver treats all non-pinned particles equally, but during tip drag the inner bob becomes the sole degree of freedom absorbing corrections from both adjacent constraints — giving it double the displacement.
+
+**Fix**: Two-pronged approach:
+
+1. **Tip drag** (`partIdx === particles.length - 1`): Instead of running the constraint solver, rebuild the entire chain at the pivot-to-mouse angle via `rebuildChain()`. All segments are collinear — the whole chain rotates rigidly from the pivot. This completely prevents the inner bob from moving independently.
+
+2. **Inner particle drag** (any other index): Pin the dragged particle to mouse and run the constraint solver, but **re-pin after every iteration**. This prevents the dragged particle from drifting during iteration while still allowing the rest of the chain to adjust naturally.
+
+The snap-to-angle (`SNAP_DEG = 15`, `SNAP_THRESHOLD = 5`) is applied to the pivot-to-mouse angle during tip drag, preserving the magnetic-alignment feel.
