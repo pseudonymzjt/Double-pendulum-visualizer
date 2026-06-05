@@ -27,9 +27,11 @@ function createPendulum(theta1, theta2, color1, color2, copyTrailsFrom) {
         color1, color2,
         trail1: [],
         trail2: [],
+        visible: true,
+        selected: false,
+        _paletteIdx: 0,
     };
     if (copyTrailsFrom) {
-        // Inherit existing trails so the divergence point is clear
         p.trail1 = copyTrailsFrom.trail1.map(pt => ({ ...pt }));
         p.trail2 = copyTrailsFrom.trail2.map(pt => ({ ...pt }));
     }
@@ -40,15 +42,28 @@ const pendulums = [];
 let chaosMode = false;
 let paused = false;
 let slowMo = false;
+let selectedPendulum = null;
+let paletteIdx = 0;
 
 // Drag-to-set state (only active when paused)
 let dragTarget = null;   // 'bob1' | 'bob2' | null
 let dragActive = false;
 const HIT_RADIUS = 22;   // px — how close a click must be to grab a bob
 
-// Color schemes
-const C_A = { c1: '#6080c0', c2: '#00d4ff' };  // Pendulum A — blue / cyan
-const C_B = { c1: '#c060a0', c2: '#ff60c0' };  // Pendulum B — magenta / pink
+// Color palette — each entry: { c1: bob1, c2: bob2 }
+const PALETTE = [
+    { c1: '#6080c0', c2: '#00d4ff' },  //  0 — blue / cyan       (Pendulum A)
+    { c1: '#c060a0', c2: '#ff60c0' },  //  1 — magenta / pink    (Pendulum B)
+    { c1: '#60c080', c2: '#30ff88' },  //  2 — mint / green
+    { c1: '#c0a050', c2: '#ffcc00' },  //  3 — gold / yellow
+    { c1: '#8060c0', c2: '#bb66ff' },  //  4 — purple / violet
+    { c1: '#c06060', c2: '#ff6060' },  //  5 — coral / red
+    { c1: '#60a0c0', c2: '#60ddff' },  //  6 — sky / light blue
+    { c1: '#c08060', c2: '#ff9966' },  //  7 — orange
+];
+// Convenience aliases for the first two palette entries
+const C_A = PALETTE[0];
+const C_B = PALETTE[1];
 
 // Scale factor: pixels per simulation-unit-length, set on resize
 let pxPerUnit = 0;
@@ -161,6 +176,7 @@ function stepPhysics() {
     const h = dt / SUB_STEPS;
 
     for (const p of pendulums) {
+        if (!p.visible) continue;
         for (let i = 0; i < SUB_STEPS; i++) {
             const s = rk4Step(p.theta1, p.theta2, p.omega1, p.omega2, h);
             p.theta1 = s.theta1;
@@ -244,6 +260,14 @@ function updateControls() {
     document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
     document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
     document.getElementById('btn-slow').textContent = slowMo ? '⏱ 1× Speed' : '⏱ ½× Slow';
+
+    const hasSel = selectedPendulum !== null && pendulums[selectedPendulum];
+    document.getElementById('ctx-menu').classList.toggle('show', !!hasSel);
+    if (hasSel) {
+        const p = pendulums[selectedPendulum];
+        document.getElementById('ctx-color').textContent = p.visible ? '🎨' : '🎨';
+        document.getElementById('ctx-visibility').textContent = p.visible ? '👁' : '👁‍🗨';
+    }
 }
 
 // --- Button handlers --------------------------------------------
@@ -266,6 +290,12 @@ document.getElementById('btn-slow').addEventListener('click', () => {
 
 document.getElementById('btn-save').addEventListener('click', saveArtwork);
 
+document.getElementById('btn-add').addEventListener('click', addPendulum);
+
+document.getElementById('ctx-color').addEventListener('click', cycleColor);
+document.getElementById('ctx-visibility').addEventListener('click', toggleVisibility);
+document.getElementById('ctx-delete').addEventListener('click', deleteSelected);
+
 document.addEventListener('keydown', (e) => {
     if (e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
@@ -278,26 +308,89 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// --- Drag-to-set (only when paused) -----------------------------
+// --- Multi-pendulum selection & drag-to-set ---------------------
+
+/** Pick the next palette color and assign it to the pendulum. */
+function assignPaletteColor(p) {
+    const c = PALETTE[paletteIdx % PALETTE.length];
+    p.color1 = c.c1;
+    p.color2 = c.c2;
+    p._paletteIdx = paletteIdx % PALETTE.length;
+    paletteIdx++;
+}
+
+/** Add a new pendulum at the default angle with the next palette color. */
+function addPendulum() {
+    const p = createPendulum(Math.PI * 0.75, Math.PI * 0.75, '#888', '#888');
+    assignPaletteColor(p);
+    pendulums.push(p);
+    computeBobPositions(p);
+    selectPendulum(pendulums.length - 1);
+    updateControls();
+}
+
+/** Select a pendulum by index (or null to deselect). */
+function selectPendulum(idx) {
+    if (selectedPendulum !== null && pendulums[selectedPendulum]) {
+        pendulums[selectedPendulum].selected = false;
+    }
+    selectedPendulum = idx;
+    if (idx !== null && pendulums[idx]) {
+        pendulums[idx].selected = true;
+    }
+    updateControls();
+}
+
+function deleteSelected() {
+    if (selectedPendulum === null) return;
+    const idx = selectedPendulum;
+    // Don't allow deleting the last pendulum
+    if (pendulums.length <= 1) return;
+    pendulums.splice(idx, 1);
+    selectPendulum(null);
+    // Adjust chaos mode if Pendulum B was deleted
+    if (chaosMode && pendulums.length < 2) chaosMode = false;
+    updateControls();
+}
+
+function cycleColor() {
+    if (selectedPendulum === null) return;
+    const p = pendulums[selectedPendulum];
+    paletteIdx = p._paletteIdx + 1;  // advance global index past this color
+    assignPaletteColor(p);
+    updateControls();
+}
+
+function toggleVisibility() {
+    if (selectedPendulum === null) return;
+    const p = pendulums[selectedPendulum];
+    p.visible = !p.visible;
+    updateControls();
+}
+
+function hitTestBob(mx, my) {
+    for (let i = pendulums.length - 1; i >= 0; i--) {
+        const p = pendulums[i];
+        if (!p.visible) continue;
+        if (Math.hypot(mx - p.bob2X, my - p.bob2Y) < HIT_RADIUS) return { idx: i, bob: 'bob2' };
+        if (Math.hypot(mx - p.bob1X, my - p.bob1Y) < HIT_RADIUS) return { idx: i, bob: 'bob1' };
+    }
+    return null;
+}
 
 canvasB.addEventListener('mousedown', (e) => {
     if (!paused) return;
     const rect = canvasB.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const a = pendulums[0];
-
-    // Check bob2 first (drawn on top)
-    if (Math.hypot(mx - a.bob2X, my - a.bob2Y) < HIT_RADIUS) {
-        dragTarget = 'bob2';
+    const hit = hitTestBob(mx, my);
+    if (hit) {
+        selectPendulum(hit.idx);
+        dragTarget = hit.bob;
         dragActive = true;
         canvasB.style.cursor = 'grabbing';
-        return;
-    }
-    if (Math.hypot(mx - a.bob1X, my - a.bob1Y) < HIT_RADIUS) {
-        dragTarget = 'bob1';
-        dragActive = true;
-        canvasB.style.cursor = 'grabbing';
+    } else {
+        selectPendulum(null);
     }
 });
 
@@ -306,23 +399,19 @@ document.addEventListener('mousemove', (e) => {
     const rect = canvasB.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const a = pendulums[0];
 
-    if (dragActive && dragTarget) {
+    if (dragActive && dragTarget && selectedPendulum !== null) {
+        const a = pendulums[selectedPendulum];
         if (dragTarget === 'bob1') {
             a.theta1 = Math.atan2(mx - PIVOT.x, my - PIVOT.y);
         } else {
             a.theta2 = Math.atan2(mx - a.bob1X, my - a.bob1Y);
         }
-        // Zero velocity — user is setting a static initial condition
         a.omega1 = 0;
         a.omega2 = 0;
         computeBobPositions(a);
     } else {
-        // Hover cursor hint
-        const d1 = Math.hypot(mx - a.bob1X, my - a.bob1Y);
-        const d2 = Math.hypot(mx - a.bob2X, my - a.bob2Y);
-        canvasB.style.cursor = (d1 < HIT_RADIUS || d2 < HIT_RADIUS) ? 'grab' : 'default';
+        canvasB.style.cursor = hitTestBob(mx, my) ? 'grab' : 'default';
     }
 });
 
@@ -349,27 +438,23 @@ canvasB.addEventListener('touchstart', (e) => {
     const rect = canvasB.getBoundingClientRect();
     const mx = touch.clientX - rect.left;
     const my = touch.clientY - rect.top;
-    const a = pendulums[0];
-
-    if (Math.hypot(mx - a.bob2X, my - a.bob2Y) < HIT_RADIUS) {
-        dragTarget = 'bob2';
+    const hit = hitTestBob(mx, my);
+    if (hit) {
+        selectPendulum(hit.idx);
+        dragTarget = hit.bob;
         dragActive = true;
-        return;
-    }
-    if (Math.hypot(mx - a.bob1X, my - a.bob1Y) < HIT_RADIUS) {
-        dragTarget = 'bob1';
-        dragActive = true;
+    } else {
+        selectPendulum(null);
     }
 }, { passive: true });
 
 canvasB.addEventListener('touchmove', (e) => {
-    if (!dragActive || !paused) return;
+    if (!dragActive || !paused || selectedPendulum === null) return;
     const touch = e.touches[0];
     const rect = canvasB.getBoundingClientRect();
     const mx = touch.clientX - rect.left;
     const my = touch.clientY - rect.top;
-    const a = pendulums[0];
-
+    const a = pendulums[selectedPendulum];
     if (dragTarget === 'bob1') {
         a.theta1 = Math.atan2(mx - PIVOT.x, my - PIVOT.y);
     } else {
@@ -432,7 +517,21 @@ function drawTrail(trail, hexColor, velocityStyle) {
 }
 
 function drawPendulum(p) {
-    const rods = (p.color2 === C_A.c2) ? '#404060' : '#604060';
+    if (!p.visible) return;
+
+    // Selection ring (drawn underneath everything)
+    if (p.selected) {
+        ctxB.beginPath();
+        ctxB.arc(p.bob1X, p.bob1Y, 10, 0, Math.PI * 2);
+        ctxB.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctxB.lineWidth = 1.5;
+        ctxB.stroke();
+        ctxB.beginPath();
+        ctxB.arc(p.bob2X, p.bob2Y, 12, 0, Math.PI * 2);
+        ctxB.stroke();
+    }
+
+    const rods = p._paletteIdx === 0 ? '#404060' : '#604060';
 
     // Rod 1
     ctxB.beginPath();
@@ -467,15 +566,15 @@ function draw() {
     // Layer A — trails (bob2 gets velocity-based line width)
     ctxA.clearRect(0, 0, cw, ch);
     for (const p of pendulums) {
+        if (!p.visible) continue;
         drawTrail(p.trail1, p.color1, false);
         drawTrail(p.trail2, p.color2, true);
     }
 
-    // Layer B — pendulums (draw A first so B is on top)
+    // Layer B — pendulums
     ctxB.clearRect(0, 0, cw, ch);
-    drawPendulum(pendulums[0]);  // Pendulum A is always first
-    if (pendulums.length > 1) {
-        drawPendulum(pendulums[1]);  // Pendulum B on top in chaos mode
+    for (const p of pendulums) {
+        drawPendulum(p);
     }
 
     // Pivot (shared, drawn once)
@@ -495,10 +594,7 @@ function animate() {
 
 // --- Bootstrap --------------------------------------------------
 
-pendulums.push(createPendulum(
-    Math.PI * 0.75, Math.PI * 0.75,
-    C_A.c1, C_A.c2,
-));
+addPendulum();
 resizeCanvas();
 updateControls();
 animate();

@@ -237,3 +237,65 @@ The pill bar now holds 6 buttons. `gap: 12px` and `font-size: 12px` kept the bar
 3. ✅ Phase 3 — Chaos Mode & State Architecture
 4. ✅ Phase 4 — Minimalist Controls & Direct Manipulation
 5. ✅ Phase 5 — Visual Polish & Export
+
+---
+
+# Stage 6 — Multi-Pendulum Sandbox & Customization
+
+## Objective
+Allow users to spawn, select, and customize multiple independent double pendulums, turning the visualizer into a collaborative canvas of chaotic paths.
+
+## Design for Stage 7 Compatibility
+Stage 7 switches from RK4 (2-link) to Verlet integration (N-link). Stage 6 must not assume 2-link rigidity:
+- **Selection system**: Tracks `selectedPendulum` index — works for any pendulum shape.
+- **Pendulum visibility**: `visible` flag is physics-agnostic.
+- **Trail rendering**: Already iterates over all pendulums — extendable to N per pendulum.
+- **Color palette**: Defined as an array — Stage 7 reuses it.
+
+## Implementation Plan
+
+### Data model additions
+Each pendulum gains:
+- `visible: true` — toggleable
+- Internal index for palette color lookup
+
+A new `selectedPendulum` variable tracks which pendulum is currently focused.
+
+### Controls
+- **`+` button** in the pill bar spawns a new pendulum with the next unused palette color.
+- **Contextual menu** appears when a pendulum is selected (minimal icons).
+- **Click-on-bob** selects a pendulum while paused.
+
+### Expected Changes
+- `script.js`: color palette array, selection state, add/delete/visibility functions, selection ring rendering, click detection.
+- `index.html`: `+` button and contextual menu panel.
+- `style.css`: contextual menu and selection ring styles.
+
+## Acceptance Criteria
+- Users can spawn ≥5 independent pendulums simultaneously.
+- Clicking a bob selects that pendulum; dragging adjusts its angles.
+- Contextual menu allows color change, visibility toggle, and deletion.
+
+---
+
+# Stage 7 — N-Link Pendulum Extension (Multi-Bob Chains)
+
+## Objective
+Generalize from 2-link (double pendulum) to N-link chains using Verlet integration, letting users add/remove joints dynamically.
+
+## Implementation Direction
+- Replace the RK4 angle-based solver with **Verlet Integration + Distance Constraints**.
+- Each pendulum stores an array of particles `[{x, y, px, py}]` and constraints `[{a, b, restLength}]`.
+- Trail follows only the **outermost** particle.
+- Rod lengths and bob sizes scale down as links are added.
+
+## Forward-Looking Notes
+- Stage 6's selection and visibility system carries over unchanged.
+- The multi-pendulum array structure carries over unchanged.
+- The trail system (array of points, batched opacity rendering) carries over for the tip.
+- The `drawPendulum` function will be refactored to draw N linked particles instead of 2.
+
+## Acceptance Criteria
+- Users can add links up to N=5 without instability.
+- Verlet constraint solver runs at 60fps.
+- The outermost bob's trail is the only one rendered.

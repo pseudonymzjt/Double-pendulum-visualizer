@@ -58,6 +58,44 @@ html, body {
     color: rgba(255, 255, 255, 0.9);
 }
 
+#controls button:first-child {
+    font-size: 16px;
+    padding: 2px 6px;
+}
+
+#ctx-menu {
+    position: fixed;
+    bottom: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    display: none;
+    gap: 6px;
+    background: rgba(10, 10, 15, 0.6);
+    padding: 4px 10px;
+    border-radius: 16px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+#ctx-menu.show {
+    display: flex;
+}
+
+#ctx-menu button {
+    font-size: 14px;
+    background: none;
+    border: none;
+    padding: 2px 6px;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+#ctx-menu button:hover {
+    opacity: 1;
+}
+
 #canvas-b {
     z-index: 1;
 }

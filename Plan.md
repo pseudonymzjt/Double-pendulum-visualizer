@@ -94,3 +94,51 @@ Build a high-performance, minimalist HTML5 Canvas web application focusing on th
 ### Acceptance Criteria
 *   The generated trajectory has artistic depth (variation in line weight and glow).
 *   Users can download their unique chaotic patterns with a single click.
+
+---
+
+## Stage 6 — Multi-Pendulum Sandbox & Customization
+
+### Objective
+Empower users to spawn, select, and customize multiple independent double pendulums on the same canvas.
+
+### Tasks
+1. **Interactive Spawner**: `+` button in the controls bar spawns a new pendulum at default angles with the next color from an 8-color palette (mint, gold, purple, coral, sky, orange, plus reused blue/cyan and magenta/pink).
+2. **Direct Selection & Focus**: Click any pendulum's bob while paused to select it. A faint white ring highlights the selected bobs. Drag adjusts that pendulum's angles while others stay locked. Click empty space to deselect.
+3. **Color & Customization**: A contextual menu floating above the controls bar appears when a pendulum is selected, with three buttons: 🎨 cycle to next palette color, 👁 toggle visibility, 🗑 delete (last pendulum cannot be deleted).
+4. **N Trajectory Rendering**: The render loop already iterates over all pendulums — no changes were needed. Hidden pendulums skip both physics and rendering.
+
+### Implementation Notes
+- `selectedPendulum` index replaces the old hardcoded `pendulums[0]` in drag handlers.
+- `hitTestBob()` checks all pendulums (reverse order for topmost priority) to find which bob was clicked.
+- Palette index is stored as `_paletteIdx` on each pendulum; rod color is derived from it (index 0 → blue-grey, others → warm grey).
+
+### Acceptance Criteria
+* ✅ Users can spawn ≥5 pendulums (palette has 8 colors, no limit enforced).
+* ✅ Clicking a bob selects that pendulum; dragging adjusts its angles.
+* ✅ Contextual menu allows color cycling, visibility toggle, and deletion.
+
+---
+
+## Phase 7 — N-Link Pendulum Extension (Multi-Bob Chains)
+
+### Objective
+Transition the physics engine from a rigid "double" pendulum to a generalized "N-link" pendulum, allowing users to dynamically add or remove bobs to create Triple, Quadruple, or arbitrary joint pendulums.
+
+### Tasks
+1. **Adaptive Physics Engine**:
+   * *Technical Choice*: Instead of hardcoding complex Lagrangian equations for a triple pendulum (which are mathematically overwhelming and rigid), refactor the physics solver to use **Verlet Integration with Distance Constraints** (similar to a rope or ragdoll physics) [2]. This allows arbitrary $N$-bobs to be simulated with high stability and minimal code complexity [2].
+2. **Dynamic Joint Modifier**:
+   * Introduce a visual controls on the selected pendulum:
+     * A "Add Joint ($+$)" button at the end of the last bob to attach an extra rod and bob.
+     * A "Remove Joint ($-$)" button to detach the outermost bob.
+3. **Multi-Joint Interaction**:
+   * Ensure that dragging any bob in an $N$-link chain correctly updates the angles and constraints of the parent/child bobs in real-time.
+4. **Aesthetic Scaling**:
+   * Automatically scale down the rod lengths and bob sizes as more links are added (e.g., $L_{new} = L_{parent} \times 0.85$) to keep the entire structure within the screen bounds.
+
+### Acceptance Criteria
+* Users can dynamically add links to create a Triple ($N=3$) or Quadruple ($N=4$) pendulum.
+* The Verlet constraint physics remain stable and do not jitter or explode even with $N=5$ links.
+* The trajectory tracker accurately follows only the *outermost* bob of the chain to draw the final chaotic path.
+
