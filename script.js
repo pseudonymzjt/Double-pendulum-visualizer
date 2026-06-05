@@ -12,6 +12,16 @@ const M1 = 10, M2 = 10;         // pendulum masses (kg, only matters for inertia
 const TRAIL_LENGTH = 1200;       // max trail points per bob (~20 s at 60 fps)
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians — butterfly wing flap
+const SNAP_DEG = 15;             // snap to multiples of this angle (degrees)
+const SNAP_THRESHOLD = 5;        // snap activates within this many degrees
+
+/** Snap radians to the nearest SNAP_DEG multiple if close enough. */
+function snapAngle(rad) {
+    const deg = rad * 180 / Math.PI;
+    const snapped = Math.round(deg / SNAP_DEG) * SNAP_DEG;
+    return Math.abs(deg - snapped) <= SNAP_THRESHOLD
+        ? snapped * Math.PI / 180 : rad;
+}
 
 // --- Pendulum state ---------------------------------------------
 // Pivot point shared by all pendulums (px, set on resize).
@@ -256,6 +266,16 @@ function saveArtwork() {
     link.click();
 }
 
+function updateAngleDisplay() {
+    const el = document.getElementById('angle-display');
+    const p = (selectedPendulum !== null && pendulums[selectedPendulum])
+        ? pendulums[selectedPendulum] : pendulums[0];
+    if (!p) { el.textContent = ''; return; }
+    const d1 = (p.theta1 * 180 / Math.PI).toFixed(1);
+    const d2 = (p.theta2 * 180 / Math.PI).toFixed(1);
+    el.textContent = `θ₁ ${d1}°  θ₂ ${d2}°`;
+}
+
 function updateControls() {
     document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
     document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
@@ -263,6 +283,7 @@ function updateControls() {
 
     const hasSel = selectedPendulum !== null && pendulums[selectedPendulum];
     document.getElementById('ctx-menu').classList.toggle('show', !!hasSel);
+    updateAngleDisplay();
     if (hasSel) {
         const p = pendulums[selectedPendulum];
         document.getElementById('ctx-color').textContent = p.visible ? '🎨' : '🎨';
@@ -403,9 +424,9 @@ document.addEventListener('mousemove', (e) => {
     if (dragActive && dragTarget && selectedPendulum !== null) {
         const a = pendulums[selectedPendulum];
         if (dragTarget === 'bob1') {
-            a.theta1 = Math.atan2(mx - PIVOT.x, my - PIVOT.y);
+            a.theta1 = snapAngle(Math.atan2(mx - PIVOT.x, my - PIVOT.y));
         } else {
-            a.theta2 = Math.atan2(mx - a.bob1X, my - a.bob1Y);
+            a.theta2 = snapAngle(Math.atan2(mx - a.bob1X, my - a.bob1Y));
         }
         a.omega1 = 0;
         a.omega2 = 0;
@@ -456,9 +477,9 @@ canvasB.addEventListener('touchmove', (e) => {
     const my = touch.clientY - rect.top;
     const a = pendulums[selectedPendulum];
     if (dragTarget === 'bob1') {
-        a.theta1 = Math.atan2(mx - PIVOT.x, my - PIVOT.y);
+        a.theta1 = snapAngle(Math.atan2(mx - PIVOT.x, my - PIVOT.y));
     } else {
-        a.theta2 = Math.atan2(mx - a.bob1X, my - a.bob1Y);
+        a.theta2 = snapAngle(Math.atan2(mx - a.bob1X, my - a.bob1Y));
     }
     a.omega1 = 0;
     a.omega2 = 0;
@@ -589,6 +610,7 @@ function draw() {
 function animate() {
     if (!paused) stepPhysics();
     draw();
+    updateAngleDisplay();
     requestAnimationFrame(animate);
 }
 

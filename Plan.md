@@ -120,7 +120,21 @@ Empower users to spawn, select, and customize multiple independent double pendul
 
 ---
 
-## Phase 7 — N-Link Pendulum Extension (Multi-Bob Chains)
+## Interface Refinement — Angle Display & Snap-to-Angle
+
+### Angle Display
+A live readout `θ₁ xx.x°  θ₂ xx.x°` is shown at the top-center of the screen. It tracks the **selected** pendulum's current angles (or Pendulum A if nothing is selected). Updates every frame.
+
+### Snap-to-Angle (Absorbing Effect)
+When dragging a bob while paused, the angle snaps to the nearest multiple of 15° if within 5° of one. This mimics the magnetic alignment found in GeoGebra and 3D modeling tools, helping users set precise angles without effort.
+
+- `SNAP_DEG = 15` — snap grid spacing
+- `SNAP_THRESHOLD = 5` — degrees within which snap activates
+- Applied to both bob1 and bob2, both mouse and touch drag
+
+---
+
+## Stage 7 — N-Link Pendulum Extension (Multi-Bob Chains)
 
 ### Objective
 Transition the physics engine from a rigid "double" pendulum to a generalized "N-link" pendulum, allowing users to dynamically add or remove bobs to create Triple, Quadruple, or arbitrary joint pendulums.
@@ -141,4 +155,3 @@ Transition the physics engine from a rigid "double" pendulum to a generalized "N
 * Users can dynamically add links to create a Triple ($N=3$) or Quadruple ($N=4$) pendulum.
 * The Verlet constraint physics remain stable and do not jitter or explode even with $N=5$ links.
 * The trajectory tracker accurately follows only the *outermost* bob of the chain to draw the final chaotic path.
-

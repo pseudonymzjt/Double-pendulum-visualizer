@@ -63,6 +63,20 @@ html, body {
     padding: 2px 6px;
 }
 
+#angle-display {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    font-family: 'Segoe UI', system-ui, monospace;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.25);
+    pointer-events: none;
+    user-select: none;
+    white-space: pre;
+}
+
 #ctx-menu {
     position: fixed;
     bottom: 62px;
