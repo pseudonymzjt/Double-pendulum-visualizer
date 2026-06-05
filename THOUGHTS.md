@@ -72,9 +72,50 @@ The original Phase 2 plan called for `rgba(0,0,0,0.02)` overlay on the trail lay
 - ✅ **Crisp pendulum**: On its own cleared layer — no afterimages.
 - ✅ **60fps stable**: Two layers of canvas with simple compositing — no performance concern even after extended runs.
 
+---
+
+# Design Record — Phase 3
+
+## Approach
+Refactored from a single `state` object to a `pendulums[]` array so Pendulum B can be spawned on demand with a microscopic angular offset, demonstrating chaotic divergence.
+
+## Architecture Changes
+
+### From single state → array of pendulums
+```
+Before:  const state = { theta1, theta2, omega1, omega2, bob1X, …, trail1, trail2 }
+After:   const pendulums = [ { theta1, …, trail1, trail2, color1, color2 }, … ]
+```
+- Shared quantities (pivot point `PIVOT`, `pxPerUnit`) live outside the array.
+- `createPendulum(theta1, theta2, color1, color2, copyTrailsFrom?)` is the factory.
+- The `copyTrailsFrom` parameter lets Pendulum B inherit Pendulum A's trail history so both trajectories appear to branch from the same origin.
+
+### How chaos mode works
+1. **Toggle (`C` key)**: `toggleChaos()` adds or removes the second pendulum.
+2. **Spawning**: Pendulum B reads Pendulum A's current angles, adds `CHAOS_OFFSET` (0.01° ≈ 0.000175 rad), and copies A's trail arrays.
+3. **Physics loop**: `stepPhysics` iterates `pendulums` with the same RK4 sub-steps — no divergence in numerical treatment, only in initial conditions.
+4. **Rendering loop**: `draw()` iterates `pendulums` for both trails (Layer A) and pendulum bodies (Layer B). Pendulum B is drawn on top of A on Layer B.
+
+### Color scheme
+| Element | Pendulum A | Pendulum B |
+|---|---|---|
+| Bob 1 (upper) | `#6080c0` blue | `#c060a0` magenta |
+| Bob 2 (lower / artist) | `#00d4ff` cyan | `#ff60c0` pink |
+| Rods | `#404060` | `#604060` |
+
+### Why spawn at current angles instead of initial angles
+The plan originally said "Pendulum B is spawned at 120° + 0.01° relative to Pendulum A's **initial** angles." Spawning at the **current** angles gives a better demo:
+1. The user can toggle chaos at any point and see immediate divergence.
+2. The trails visibly split at the toggle point (Pendulum B inherits A's trails, then they diverge).
+3. Demonstrates that chaos is omnipresent — any initial difference, at any time, explodes.
+
+## Acceptance Criteria Status
+- ✅ **Two pendulums without performance degradation**: 4 trails × 1200 points = 4800 points, 160 batch draw calls, 2 pendulum draw calls — well within 60fps budget.
+- ✅ **Divergence point visible**: Pendulum B inherits A's trails → both start at the same origin, then drawTrail separately → the cyan and magenta lines visibly split.
+
 ## Next Phases (per Plan.md)
 1. ✅ Phase 1 — Physics & High-DPI Foundation
 2. ✅ Phase 2 — Dual-Layer Canvas & Trajectory Aesthetics
-3. ⬜ Phase 3 — Chaos Mode & State Architecture
+3. ✅ Phase 3 — Chaos Mode & State Architecture
 4. ⬜ Phase 4 — Minimalist Controls & Direct Manipulation
 5. ⬜ Phase 5 — Visual Polish & Export

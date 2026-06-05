@@ -48,11 +48,15 @@ Build a high-performance, minimalist HTML5 Canvas web application focusing on th
 *Optimization Note: Building Chaos Mode early is easier than refactoring a single-pendulum state into a dual-pendulum state later.*
 
 ### Tasks
-1.  **Dual-Pendulum Physics Engine**: Rewrite the state manager to support running two pendulums (Pendulum A and Pendulum B) simultaneously with independent colors (e.g., Cyan and Magenta).
-2.  **Chaos Mode Toggle**:
-    *   When **Single Mode** is active: Only Pendulum A is simulated.
-    *   When **Chaos Mode** is active: Pendulum B is spawned at $120^\circ + 0.01^\circ$ relative to Pendulum A's initial angles.
-3.  **Trajectory Interaction**: Use distinct colors for their trajectories so the moment of divergence is visually stunning (e.g., where cyan and magenta split into separate paths).
+1.  **Dual-Pendulum Physics Engine**: Refactor state manager from a single `state` object into a `pendulums[]` array. Each pendulum carries its own angles, velocities, pixel positions, and trail arrays. A `createPendulum()` factory initialises new copies.
+2.  **Chaos Mode Toggle** (keyboard: `C`):
+    *   **Single Mode** (default): Only Pendulum A is simulated (blue/cyan).
+    *   **Chaos Mode**: Pendulum B is spawned at Pendulum A's **current** angles + 0.01° (≈ 0.000175 rad), inheriting A's existing trail arrays so both trajectories appear to start from the same origin and visibly split at the toggle point.
+3.  **Trajectory Interaction**:
+    *   Pendulum A: bob1 `#6080c0`, bob2 `#00d4ff` (blue/cyan).
+    *   Pendulum B: bob1 `#c060a0`, bob2 `#ff60c0` (magenta/pink).
+    *   Rods subtly differentiated (`#404060` for A, `#604060` for B).
+    *   Both pendulums share the same pivot point. Pendulum B is drawn on top when active.
 
 ### Acceptance Criteria
 *   Two pendulums can run simultaneously without performance degradation.

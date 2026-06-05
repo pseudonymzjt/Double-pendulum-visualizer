@@ -1,6 +1,6 @@
 /* ============================================================
    Chaotic Art — Double Pendulum Visualizer
-   Phase 2 — Dual-Layer Canvas & Trajectory Aesthetics
+   Phase 3 — Chaos Mode & State Architecture
    ============================================================ */
 
 // --- Constants --------------------------------------------------
@@ -11,27 +11,42 @@ const SUB_STEPS = 4;             // RK4 sub-steps per frame for energy stability
 const M1 = 10, M2 = 10;         // pendulum masses (kg, only matters for inertia)
 const TRAIL_LENGTH = 1200;       // max trail points per bob (~20 s at 60 fps)
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
+const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians — butterfly wing flap
 
 // --- Pendulum state ---------------------------------------------
-const state = {
-    theta1: Math.PI * 0.75,    // angle of rod 1 from vertical (rad)
-    theta2: Math.PI * 0.75,    // angle of rod 2 from vertical (rad)
-    omega1: 0,                 // angular velocity of rod 1 (rad/s)
-    omega2: 0,                 // angular velocity of rod 2 (rad/s)
-    originX: 0,                // pivot x (px)
-    originY: 0,                // pivot y (px)
-    bob1X: 0, bob1Y: 0,       // bob 1 position (px)
-    bob2X: 0, bob2Y: 0,       // bob 2 position (px)
-    trail1: [],                // bob 1 trajectory [{x, y}]
-    trail2: [],                // bob 2 trajectory [{x, y}]
-};
+// Pivot point shared by all pendulums (px, set on resize).
+const PIVOT = { x: 0, y: 0 };
+
+/** Create a new pendulum with the given initial angles and colors. */
+function createPendulum(theta1, theta2, color1, color2, copyTrailsFrom) {
+    const p = {
+        theta1, theta2,
+        omega1: 0, omega2: 0,
+        bob1X: 0, bob1Y: 0,
+        bob2X: 0, bob2Y: 0,
+        color1, color2,
+        trail1: [],
+        trail2: [],
+    };
+    if (copyTrailsFrom) {
+        // Inherit existing trails so the divergence point is clear
+        p.trail1 = copyTrailsFrom.trail1.map(pt => ({ ...pt }));
+        p.trail2 = copyTrailsFrom.trail2.map(pt => ({ ...pt }));
+    }
+    return p;
+}
+
+const pendulums = [];
+let chaosMode = false;
+
+// Color schemes
+const C_A = { c1: '#6080c0', c2: '#00d4ff' };  // Pendulum A — blue / cyan
+const C_B = { c1: '#c060a0', c2: '#ff60c0' };  // Pendulum B — magenta / pink
 
 // Scale factor: pixels per simulation-unit-length, set on resize
 let pxPerUnit = 0;
 
 // --- Canvas (HiDPI) — dual layer ---------------------------------
-// Layer A (bottom) – trajectory lines, accumulates each frame.
-// Layer B (top)    – pendulum, cleared and redrawn every frame.
 const canvasA = document.getElementById('canvas-a');
 const canvasB = document.getElementById('canvas-b');
 const ctxA = canvasA.getContext('2d');
@@ -43,7 +58,6 @@ function resizeCanvas() {
     cw = window.innerWidth;
     ch = window.innerHeight;
 
-    // Both canvases get identical HiDPI treatment
     [canvasA, canvasB].forEach(c => {
         c.width = cw * dpr;
         c.height = ch * dpr;
@@ -53,24 +67,19 @@ function resizeCanvas() {
     ctxA.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctxB.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Compute pixel scale so the full span (~2 × PHYS_L) fits nicely
     const minDim = Math.min(cw, ch);
     pxPerUnit = minDim * 0.18 / PHYS_L1;
 
-    state.originX = cw / 2;
-    state.originY = ch * 0.3;
+    PIVOT.x = cw / 2;
+    PIVOT.y = ch * 0.3;
 
-    computeBobPositions();
+    pendulums.forEach(p => computeBobPositions(p));
 }
 
 window.addEventListener('resize', resizeCanvas);
 
 // --- Physics (RK4 integrator) -----------------------------------
 
-/**
- * Derivatives of the double-pendulum state vector.
- * Standard formulation — see e.g. the equations on scholarpedia.
- */
 function derivatives(theta1, theta2, omega1, omega2) {
     const delta = theta1 - theta2;
     const cosDelta = Math.cos(delta);
@@ -91,41 +100,29 @@ function derivatives(theta1, theta2, omega1, omega2) {
         )
     ) / (PHYS_L2 * denom);
 
-    return {
-        dTheta1: omega1,
-        dTheta2: omega2,
-        dOmega1,
-        dOmega2,
-    };
+    return { dTheta1: omega1, dTheta2: omega2, dOmega1, dOmega2 };
 }
 
-/**
- * Single RK4 step for the 4-element state vector.
- */
 function rk4Step(theta1, theta2, omega1, omega2, dt) {
-    const evaluate = (t1, t2, w1, w2) => derivatives(t1, t2, w1, w2);
+    const f = (t1, t2, w1, w2) => derivatives(t1, t2, w1, w2);
 
-    // k₁
-    const k1 = evaluate(theta1, theta2, omega1, omega2);
+    const k1 = f(theta1, theta2, omega1, omega2);
 
-    // k₂
-    const k2 = evaluate(
+    const k2 = f(
         theta1 + 0.5 * dt * k1.dTheta1,
         theta2 + 0.5 * dt * k1.dTheta2,
         omega1 + 0.5 * dt * k1.dOmega1,
         omega2 + 0.5 * dt * k1.dOmega2,
     );
 
-    // k₃
-    const k3 = evaluate(
+    const k3 = f(
         theta1 + 0.5 * dt * k2.dTheta1,
         theta2 + 0.5 * dt * k2.dTheta2,
         omega1 + 0.5 * dt * k2.dOmega1,
         omega2 + 0.5 * dt * k2.dOmega2,
     );
 
-    // k₄
-    const k4 = evaluate(
+    const k4 = f(
         theta1 + dt * k3.dTheta1,
         theta2 + dt * k3.dTheta2,
         omega1 + dt * k3.dOmega1,
@@ -141,54 +138,73 @@ function rk4Step(theta1, theta2, omega1, omega2, dt) {
     };
 }
 
-/** Convert physics angles to pixel positions on canvas. */
-function computeBobPositions() {
-    const { originX, originY } = state;
+/** Convert physics angles → pixel positions for one pendulum. */
+function computeBobPositions(p) {
     const r1 = PHYS_L1 * pxPerUnit;
     const r2 = PHYS_L2 * pxPerUnit;
-
-    state.bob1X = originX + r1 * Math.sin(state.theta1);
-    state.bob1Y = originY + r1 * Math.cos(state.theta1);
-    state.bob2X = state.bob1X + r2 * Math.sin(state.theta2);
-    state.bob2Y = state.bob1Y + r2 * Math.cos(state.theta2);
+    p.bob1X = PIVOT.x + r1 * Math.sin(p.theta1);
+    p.bob1Y = PIVOT.y + r1 * Math.cos(p.theta1);
+    p.bob2X = p.bob1X + r2 * Math.sin(p.theta2);
+    p.bob2Y = p.bob1Y + r2 * Math.cos(p.theta2);
 }
 
-/** Advance one frame of physics (fixed dt with sub-stepping). */
+/** Advance all active pendulums by one frame. */
 function stepPhysics() {
-    const dt = 1 / 60;          // one frame at 60 fps
-    const h = dt / SUB_STEPS;   // sub-step size
+    const dt = 1 / 60;
+    const h = dt / SUB_STEPS;
 
-    for (let i = 0; i < SUB_STEPS; i++) {
-        const s = rk4Step(state.theta1, state.theta2, state.omega1, state.omega2, h);
-        state.theta1 = s.theta1;
-        state.theta2 = s.theta2;
-        state.omega1 = s.omega1;
-        state.omega2 = s.omega2;
+    for (const p of pendulums) {
+        for (let i = 0; i < SUB_STEPS; i++) {
+            const s = rk4Step(p.theta1, p.theta2, p.omega1, p.omega2, h);
+            p.theta1 = s.theta1;
+            p.theta2 = s.theta2;
+            p.omega1 = s.omega1;
+            p.omega2 = s.omega2;
+        }
+        computeBobPositions(p);
+
+        p.trail1.push({ x: p.bob1X, y: p.bob1Y });
+        if (p.trail1.length > TRAIL_LENGTH) p.trail1.shift();
+        p.trail2.push({ x: p.bob2X, y: p.bob2Y });
+        if (p.trail2.length > TRAIL_LENGTH) p.trail2.shift();
     }
-
-    computeBobPositions();
-
-    // Record trajectories
-    state.trail1.push({ x: state.bob1X, y: state.bob1Y });
-    if (state.trail1.length > TRAIL_LENGTH) state.trail1.shift();
-    state.trail2.push({ x: state.bob2X, y: state.bob2Y });
-    if (state.trail2.length > TRAIL_LENGTH) state.trail2.shift();
 }
+
+// --- Chaos mode toggle ------------------------------------------
+
+function toggleChaos() {
+    if (chaosMode) {
+        // Remove Pendulum B (second entry)
+        if (pendulums.length > 1) pendulums.pop();
+        chaosMode = false;
+    } else {
+        // Spawn Pendulum B at Pendulum A's current state + CHAOS_OFFSET
+        const a = pendulums[0];
+        const b = createPendulum(
+            a.theta1 + CHAOS_OFFSET,
+            a.theta2 + CHAOS_OFFSET,
+            C_B.c1, C_B.c2,
+            a,   // inherit A's trails so divergence point is visible
+        );
+        pendulums.push(b);
+        chaosMode = true;
+    }
+}
+
+// --- Keyboard controls ------------------------------------------
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'c' || e.key === 'C') {
+        toggleChaos();
+    }
+});
 
 // --- Rendering --------------------------------------------------
-// Layer A — trail.  Not cleared between frames; we redraw the whole trail
-// on top of whatever was there, so old pixels are overwritten correctly.
-// Layer B — pendulum.  Cleared and redrawn fresh every frame.
 
-/**
- * Draw a fading trail of connected line segments on Layer A.
- * Older segments are more transparent; newer segments are brighter.
- */
 function drawTrail(trail, hexColor) {
     const len = trail.length;
     if (len < 2) return;
 
-    // Parse hex into RGB components for rgba() interpolation
     const r = parseInt(hexColor.slice(1, 3), 16);
     const g = parseInt(hexColor.slice(3, 5), 16);
     const b = parseInt(hexColor.slice(5, 7), 16);
@@ -201,7 +217,6 @@ function drawTrail(trail, hexColor) {
         const segEnd = Math.min(segStart + batchSize, totalSegments);
         if (segStart >= segEnd) break;
 
-        // Opacity ramps from barely visible → bright
         const t = (batch + 1) / TRAIL_BATCHES;
         const alpha = 0.02 + t * 0.88;
 
@@ -216,54 +231,58 @@ function drawTrail(trail, hexColor) {
     }
 }
 
-/** Draw the pendulum rods, bobs, and pivot on Layer B (fully opaque). */
-function drawPendulum() {
-    const { originX, originY, bob1X, bob1Y, bob2X, bob2Y } = state;
+function drawPendulum(p) {
+    const rods = (p.color2 === C_A.c2) ? '#404060' : '#604060';
 
     // Rod 1
     ctxB.beginPath();
-    ctxB.moveTo(originX, originY);
-    ctxB.lineTo(bob1X, bob1Y);
-    ctxB.strokeStyle = '#404060';
+    ctxB.moveTo(PIVOT.x, PIVOT.y);
+    ctxB.lineTo(p.bob1X, p.bob1Y);
+    ctxB.strokeStyle = rods;
     ctxB.lineWidth = 2;
     ctxB.stroke();
 
     // Rod 2
     ctxB.beginPath();
-    ctxB.moveTo(bob1X, bob1Y);
-    ctxB.lineTo(bob2X, bob2Y);
-    ctxB.strokeStyle = '#404060';
+    ctxB.moveTo(p.bob1X, p.bob1Y);
+    ctxB.lineTo(p.bob2X, p.bob2Y);
+    ctxB.strokeStyle = rods;
     ctxB.lineWidth = 2;
     ctxB.stroke();
 
     // Bob 1
     ctxB.beginPath();
-    ctxB.arc(bob1X, bob1Y, 6, 0, Math.PI * 2);
-    ctxB.fillStyle = '#6080c0';
+    ctxB.arc(p.bob1X, p.bob1Y, 6, 0, Math.PI * 2);
+    ctxB.fillStyle = p.color1;
     ctxB.fill();
 
-    // Bob 2 (the "artist")
+    // Bob 2
     ctxB.beginPath();
-    ctxB.arc(bob2X, bob2Y, 8, 0, Math.PI * 2);
-    ctxB.fillStyle = '#00d4ff';
-    ctxB.fill();
-
-    // Pivot
-    ctxB.beginPath();
-    ctxB.arc(originX, originY, 4, 0, Math.PI * 2);
-    ctxB.fillStyle = '#ffffff';
+    ctxB.arc(p.bob2X, p.bob2Y, 8, 0, Math.PI * 2);
+    ctxB.fillStyle = p.color2;
     ctxB.fill();
 }
 
 function draw() {
-    // Layer A: redraw the full trail (old trail points are overwritten)
+    // Layer A — trails
     ctxA.clearRect(0, 0, cw, ch);
-    drawTrail(state.trail1, '#6080c0');
-    drawTrail(state.trail2, '#00d4ff');
+    for (const p of pendulums) {
+        drawTrail(p.trail1, p.color1);
+        drawTrail(p.trail2, p.color2);
+    }
 
-    // Layer B: fresh pendulum every frame
+    // Layer B — pendulums (draw A first so B is on top)
     ctxB.clearRect(0, 0, cw, ch);
-    drawPendulum();
+    drawPendulum(pendulums[0]);  // Pendulum A is always first
+    if (pendulums.length > 1) {
+        drawPendulum(pendulums[1]);  // Pendulum B on top in chaos mode
+    }
+
+    // Pivot (shared, drawn once)
+    ctxB.beginPath();
+    ctxB.arc(PIVOT.x, PIVOT.y, 4, 0, Math.PI * 2);
+    ctxB.fillStyle = '#ffffff';
+    ctxB.fill();
 }
 
 // --- Animation loop ---------------------------------------------
@@ -276,5 +295,9 @@ function animate() {
 
 // --- Bootstrap --------------------------------------------------
 
+pendulums.push(createPendulum(
+    Math.PI * 0.75, Math.PI * 0.75,
+    C_A.c1, C_A.c2,
+));
 resizeCanvas();
 animate();
