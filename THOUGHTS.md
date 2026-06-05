@@ -272,13 +272,31 @@ A new `selectedPendulum` variable tracks which pendulum is currently focused.
 - `style.css`: contextual menu and selection ring styles.
 
 ## Acceptance Criteria
-- Users can spawn ≥5 independent pendulums simultaneously.
-- Clicking a bob selects that pendulum; dragging adjusts its angles.
-- Contextual menu allows color change, visibility toggle, and deletion.
+- ✅ Users can spawn ≥5 pendulums (palette has 8 colors, no limit enforced).
+- ✅ Clicking a bob selects that pendulum; dragging adjusts its angles.
+- ✅ Contextual menu allows color cycling, visibility toggle, and deletion.
 
 ---
 
-# Stage 7 — N-Link Pendulum Extension (Multi-Bob Chains)
+# Interface Refinement — Angle Display & Snap-to-Angle
+
+Added between Stage 6 and Stage 7 as a standalone improvement.
+
+## Angle Display
+A live readout at the top-center of the screen: `θ₁ xx.x°  θ₂ xx.x°`. Follows the selected pendulum (or Pendulum A if none selected). Updated every frame in `animate()`.
+
+For N-link pendulums (Stage 7), the display dynamically shows N entries using subscript characters.
+
+## Snap-to-Angle
+When dragging a bob while paused, the angle snaps to the nearest multiple of 15° if within 5° of one. This mimics the magnetic alignment found in GeoGebra and 3D modeling tools.
+
+- `SNAP_DEG = 15` — snap grid spacing
+- `SNAP_THRESHOLD = 5` — activation window in degrees
+- Applied to both bob1 and bob2, both mouse and touch drag — via the `snapAngle(rad)` wrapper
+
+---
+
+# Stage 7 — N-Link Pendulum with Verlet Integration
 
 ## Objective
 Replace RK4 angle-based physics with Verlet integration + distance constraints, enabling dynamic N-link chains.
@@ -286,46 +304,62 @@ Replace RK4 angle-based physics with Verlet integration + distance constraints, 
 ## Implementation
 
 ### Verlet Physics Engine
-Each pendulum now stores:
-- `particles: [{x, y, px, py}, ...]` — positions and previous positions (implicit velocity)
+Each pendulum stores:
+- `particles: [{x, y, px, py}, ...]` — positions and previous positions (implicit velocity via `v = x - px`)
 - `constraints: [{a, b, len}, ...]` — pairwise distance constraints
 
-The physics step:
-1. Apply gravity to all particles except the fixed pivot (index 0).
-2. Run 10 iterations of the constraint solver to enforce rod lengths.
+Each frame:
+1. Apply gravity to all particles except the fixed pivot (index 0): `y += vy + G * pxPerUnit * VERLET_G_SCALE * h²`
+2. Run `max(10, constraints * 2)` iterations of the constraint solver to enforce rod lengths.
 3. Pin the pivot to `PIVOT`.
-4. Record the tip particle's position to the single `trail` array (with speed for velocity-based line width).
+4. Record trail points for every particle (one trail array per particle).
 
 ### What was removed
-- `derivatives()` and `rk4Step()` — replaced by Verlet.
-- `computeBobPositions()` — replaced by `syncBobPositions()` which reads from particles.
-- `trail1` and `trail2` arrays — replaced by single `trail` per pendulum (only the tip).
+- `derivatives()` and `rk4Step()` — replaced by `verletStep()`.
+- `computeBobPositions()` — replaced by `syncBobPositions()`.
 - `theta1`, `theta2`, `omega1`, `omega2` — replaced by particle positions.
+- Dual trail system (`trail1`/`trail2`) — replaced by per-particle `trails[]` array.
 
 ### What stayed
-- `bob1X/Y` and `bob2X/Y` are kept as backward-compat computed fields (synced from particles).
+- `bob1X/Y` and `bob2X/Y` as backward-compat computed fields.
 - All Stage 6 features (selection, visibility, color cycling, contextual menu, deletion).
-- Chaos mode, slow-motion, save artwork, clear trails, angle display.
+- Chaos mode, slow-motion, save artwork, clear trails, angle display, snap-to-angle.
 - Keyboard shortcuts, drag-to-set, touch support.
 
+### Per-Particle Trails
+Each particle has its own `trails[i]` array. Trail lengths scale with depth:
+- **Particle 1** (first bob): ~180 points (3 s), drawn at fixed 1.5 px width using `color1`.
+- **Middle particles**: progressively longer trails up to the tip.
+- **Tip particle**: full 1200 points (20 s), velocity-based line width (0.8–3.0 px), drawn using `color2`.
+
+Trail limit formula: `limit = TRAIL_LENGTH × (0.15 + 0.85 × i / (N-1))`
+
 ### Joint Modifiers
-- `➕` button extends the chain: new particle placed in the direction of the last segment, length = last link × 0.85.
-- `➖` button removes the outermost link (minimum 2 links).
-- Only shown when a pendulum is selected; `➖` hidden when at MIN_LINKS.
+- `➕` extends the chain in the direction of the last segment, length = last link × 0.85. Adds one particle and one constraint. Pushes an empty trail array.
+- `➖` removes the outermost link (minimum 2). Pops particle, constraint, and trail array.
+- Buttons shown in the contextual menu when a pendulum is selected; `➖` hidden at MIN_LINKS.
 
 ### Aesthetic Scaling
-Each new link is 85% of the previous link's length. Bob radii are similarly scaled: `r * LINK_SCALE^(i-1)`, so deeper bobs are progressively smaller. All inner bobs use `color1`; the tip bob uses `color2`.
+Each new link is 85% of the previous link's length. Bob radii scale similarly: `r × LINK_SCALE^(i-1)`. Inner bobs use `color1`; the tip bob uses `color2`.
 
 ### Angle Display Update
 For N-link pendulums, the display shows N entries: `θ₁ xx° θ₂ xx° … θₙ xx°`, computed from each segment's `atan2(dx, dy)`.
 
-## Challenges Encountered
-1. **Verlet ↔ angle model conversion**: Resize and reset need to reconstruct the particle chain from a target angle. `buildChain(nLinks, thetaDeg)` handles this cleanly.
-2. **Chaos offset**: With Verlet, the 0.01° angular offset is applied as a 0.3 px perpendicular displacement on the tip particle — small enough to demonstrate the butterfly effect.
-3. **Backward compatibility**: Keeping `bob1X/Y` and `bob2X/Y` as computed fields avoided cascading changes through selection rings, hit testing, and angle display.
-4. **Constraint stability**: 4 sub-steps × 10 iterations = 40 constraint solves per frame prevents jitter even with N=5 links.
+## Challenges & Fixes
+
+1. **Gravity too weak**: Verlet gravity `G × pxPerUnit` gave ~0.022 px/substep displacement — pendulum appeared frozen. Fix: `VERLET_G_SCALE = 8` multiplies gravity to match RK4-era swing speed.
+
+2. **Single trail lost inner bobs**: Only the tip left a trail; adding a joint made all inner bobs invisible in the trail. Fix: per-particle `trails[]` with length scaling by depth.
+
+3. **Verlet ↔ angle model conversion**: Resize, reset need to reconstruct the chain given a target angle. `buildChain(nLinks, thetaDeg)` creates particles at the specified angle. `rebuildChain()` is used by `resetSimulation`.
+
+4. **Chaos offset with Verlet**: The 0.01° angular offset is applied as a 0.3 px perpendicular displacement on the tip particle — tiny enough for butterfly-effect divergence.
+
+5. **Backward compatibility**: `bob1X/Y` and `bob2X/Y` are synced from particles each frame via `syncBobPositions()`, keeping selection rings, hit testing, and angle display working without changes.
+
+6. **Stale trails on joint change**: `addJoint` and `removeJoint` now push/pop the trails array, keeping trail count in sync with particle count. Trails are cleared on window resize.
 
 ## Acceptance Criteria
-- ✅ Users can add links up to N=5 without instability.
-- ✅ Verlet constraints remain stable — no jitter or explosion.
-- ✅ Only the outermost bob's path is recorded as the trail.
+- ✅ Users can add links up to N=5 without visible jitter or explosion.
+- ✅ Verlet constraints remain stable — 4 sub-steps × 10 iterations = 40 solves/frame.
+- ✅ All particles leave trails; inner trails are shorter and dimmer than the tip's trail.

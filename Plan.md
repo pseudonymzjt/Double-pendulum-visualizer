@@ -151,16 +151,17 @@ Replace RK4 angle-based physics with Verlet integration + distance constraints, 
 ### Implementation Notes
 - `buildChain(nLinks, thetaDeg)` constructs particles and constraints from scratch for a given angle. Used on reset, resize, and initial creation.
 - `syncBobPositions(p)` copies the first and last particle positions into `bob1X/Y` and `bob2X/Y` for backward compatibility with selection rings and angle display.
-- A single `trail` array per pendulum tracks only the tip (outermost particle) with velocity-based line width.
+- Per-particle `trails[i]` arrays track every bob's path. Trail length scales with depth: `limit = TRAIL_LENGTH × (0.15 + 0.85 × i/(N-1))`. The tip gets the full length, inner bobs get progressively shorter trails.
+- `VERLET_G_SCALE = 8` compensates for Verlet's inherently small per-step displacements, matching RK4-era swing speed.
 - The `rebuildChain` function is used by `resetSimulation` to restore the default shape at `DEFAULT_ANGLE_DEG = 135°`.
 
 ### Backward Compatibility
 - Existing Stage 6 features (multi-pendulum array, selection, visibility, color cycling, deletion) carry over unchanged.
-- Chaos mode still spawns Pendulum B at a microscopic offset from Pendulum A.
+- Chaos mode still spawns Pendulum B at a microscopic 0.3 px perpendicular offset from Pendulum A.
 - Slow-motion, save artwork, clear trails all work as before.
 - The angle display now shows N entries (`θ₁`, `θ₂`, … `θₙ`) for N-link pendulums.
 
 ### Acceptance Criteria
 * ✅ Users can add links up to N=5 without visible jitter or explosion.
-* ✅ Verlet constraints remain stable — sub-stepping (4×) and `CONSTRAINT_ITERS` (10) provide sufficient damping.
-* ✅ Only the outermost bob's path is recorded as the trail.
+* ✅ Verlet constraints remain stable — 4 sub-steps × 10 iterations = 40 constraint solves/frame.
+* ✅ All particles leave trails; inner trails are shorter and dimmer than the tip's trail.
