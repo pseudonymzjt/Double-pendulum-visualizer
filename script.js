@@ -173,21 +173,22 @@ function stepPhysics() {
 // --- Chaos mode toggle ------------------------------------------
 
 function toggleChaos() {
+    const caption = document.getElementById('caption');
     if (chaosMode) {
-        // Remove Pendulum B (second entry)
         if (pendulums.length > 1) pendulums.pop();
         chaosMode = false;
+        caption.textContent = '[C] Chaos Mode';
     } else {
-        // Spawn Pendulum B at Pendulum A's current state + CHAOS_OFFSET
         const a = pendulums[0];
         const b = createPendulum(
             a.theta1 + CHAOS_OFFSET,
             a.theta2 + CHAOS_OFFSET,
             C_B.c1, C_B.c2,
-            a,   // inherit A's trails so divergence point is visible
+            a,
         );
         pendulums.push(b);
         chaosMode = true;
+        caption.textContent = '[C] Single Mode';
     }
 }
 
