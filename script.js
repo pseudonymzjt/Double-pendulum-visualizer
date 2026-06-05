@@ -222,8 +222,8 @@ function clearTrails() {
 }
 
 function updateControls() {
-    document.getElementById('btn-play').textContent = paused ? '▶ Play' : '⏸ Pause';
-    document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single' : '⚡ Chaos';
+    document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
+    document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
 }
 
 // --- Button handlers --------------------------------------------
