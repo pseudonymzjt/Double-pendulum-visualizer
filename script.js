@@ -55,20 +55,23 @@ function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) 
     // pendulum has one chain whose first joint-angle is θ₁; sub-sequent
     // links are all at θ₂ (or the same angle) for the classic double‑pendulum
     // starting shape.  The Verlet solver handles the rest.
+    const np = chain.particles.length;
     const p = {
         particles: chain.particles,
         constraints: chain.constraints,
         bob1X: 0, bob1Y: 0,        // recomputed every frame
         bob2X: 0, bob2Y: 0,
         color1, color2,
-        trail: [],
+        trails: Array.from({ length: np }, () => []),
         visible: true,
         selected: false,
         _paletteIdx: 0,
     };
     if (copyFrom) {
-        // Inherit trail so divergence point is visible
-        p.trail = copyFrom.trail.map(pt => ({ ...pt }));
+        // Inherit all trails so divergence point is visible
+        for (let i = 1; i < np && i < copyFrom.trails.length; i++) {
+            p.trails[i] = copyFrom.trails[i].map(pt => ({ ...pt }));
+        }
     }
     return p;
 }
@@ -154,6 +157,7 @@ function resizeCanvas() {
         p.constraints = chain.constraints;
         syncBobPositions(p);
     }
+    clearTrails();
 }
 
 window.addEventListener('resize', resizeCanvas);
@@ -212,12 +216,18 @@ function stepPhysics() {
         verletStep(p, dt);
         syncBobPositions(p);
 
-        // Record tip trail with speed
-        const tip = p.particles[p.particles.length - 1];
-        const prev = p.trail.length > 0 ? p.trail[p.trail.length - 1] : null;
-        const speed = prev ? Math.hypot(tip.x - prev.x, tip.y - prev.y) : 0;
-        p.trail.push({ x: tip.x, y: tip.y, s: speed });
-        if (p.trail.length > TRAIL_LENGTH) p.trail.shift();
+        // Record trails for all particles (inner = shorter limit, tip = full)
+        const total = p.particles.length;
+        for (let i = 1; i < total; i++) {
+            const pt = p.particles[i];
+            const trail = p.trails[i];
+            const prev = trail.length > 0 ? trail[trail.length - 1] : null;
+            const speed = prev ? Math.hypot(pt.x - prev.x, pt.y - prev.y) : 0;
+            trail.push({ x: pt.x, y: pt.y, s: speed });
+            const ratio = i / (total - 1);
+            const limit = Math.round(TRAIL_LENGTH * (0.15 + 0.85 * ratio));
+            if (trail.length > limit) trail.shift();
+        }
     }
 }
 
@@ -249,7 +259,7 @@ function resetSimulation() {
     const n = a.constraints.length;
     rebuildChain(a, n, DEFAULT_ANGLE_DEG);
     syncBobPositions(a);
-    a.trail = [];
+    for (const t of a.trails) t.length = 0;
 
     if (chaosMode) {
         if (pendulums.length > 1) pendulums.pop();
@@ -259,7 +269,9 @@ function resetSimulation() {
 }
 
 function clearTrails() {
-    for (const p of pendulums) p.trail = [];
+    for (const p of pendulums) {
+        for (const t of p.trails) t.length = 0;
+    }
 }
 
 function saveArtwork() {
@@ -417,7 +429,7 @@ function addJoint() {
         py: tip.y,
     });
     p.constraints.push({ a: last, b: last + 1, len: newLen });
-    p.trail = [];        // old trail tracked a different tip
+    p.trails.push([]);   // new trail for the new particle
     syncBobPositions(p);
     updateControls();
 }
@@ -428,7 +440,7 @@ function removeJoint() {
     if (p.constraints.length <= MIN_LINKS) return;
     p.particles.pop();
     p.constraints.pop();
-    p.trail = [];        // old trail tracked the now-removed tip
+    p.trails.pop();      // remove the removed particle's trail
     syncBobPositions(p);
     updateControls();
 }
@@ -641,11 +653,15 @@ function drawPendulum(p) {
 }
 
 function draw() {
-    // Layer A — trails (only tip)
+    // Layer A — trails (one per particle; tip = full, inner = shorter)
     ctxA.clearRect(0, 0, cw, ch);
     for (const p of pendulums) {
         if (!p.visible) continue;
-        drawTrail(p.trail, p.color2, true);
+        const total = p.particles.length;
+        for (let i = total - 1; i >= 1; i--) {
+            const isTip = i === total - 1;
+            drawTrail(p.trails[i], isTip ? p.color2 : p.color1, isTip);
+        }
     }
 
     // Layer B — pendulums
