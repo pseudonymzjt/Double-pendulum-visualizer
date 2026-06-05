@@ -38,6 +38,7 @@ function createPendulum(theta1, theta2, color1, color2, copyTrailsFrom) {
 
 const pendulums = [];
 let chaosMode = false;
+let paused = false;
 
 // Color schemes
 const C_A = { c1: '#6080c0', c2: '#00d4ff' };  // Pendulum A — blue / cyan
@@ -170,14 +171,12 @@ function stepPhysics() {
     }
 }
 
-// --- Chaos mode toggle ------------------------------------------
+// --- Controls ---------------------------------------------------
 
 function toggleChaos() {
-    const caption = document.getElementById('caption');
     if (chaosMode) {
         if (pendulums.length > 1) pendulums.pop();
         chaosMode = false;
-        caption.textContent = '[C] Chaos Mode';
     } else {
         const a = pendulums[0];
         const b = createPendulum(
@@ -188,14 +187,43 @@ function toggleChaos() {
         );
         pendulums.push(b);
         chaosMode = true;
-        caption.textContent = '[C] Single Mode';
     }
+    updateCaption();
 }
 
-// --- Keyboard controls ------------------------------------------
+function resetSimulation() {
+    const a = pendulums[0];
+    a.theta1 = Math.PI * 0.75;
+    a.theta2 = Math.PI * 0.75;
+    a.omega1 = 0;
+    a.omega2 = 0;
+    a.trail1 = [];
+    a.trail2 = [];
+    computeBobPositions(a);
+
+    // If chaos was active, remove Pendulum B
+    if (chaosMode) {
+        if (pendulums.length > 1) pendulums.pop();
+        chaosMode = false;
+    }
+    updateCaption();
+}
+
+function updateCaption() {
+    const pauseLabel = paused ? 'Play' : 'Pause';
+    const chaosLabel = chaosMode ? 'Single' : 'Chaos';
+    document.getElementById('caption').textContent =
+        `[Space] ${pauseLabel}  ·  [R] Reset  ·  [C] ${chaosLabel}`;
+}
 
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'c' || e.key === 'C') {
+    if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        paused = !paused;
+        updateCaption();
+    } else if (e.key === 'r' || e.key === 'R') {
+        resetSimulation();
+    } else if (e.key === 'c' || e.key === 'C') {
         toggleChaos();
     }
 });
@@ -289,7 +317,7 @@ function draw() {
 // --- Animation loop ---------------------------------------------
 
 function animate() {
-    stepPhysics();
+    if (!paused) stepPhysics();
     draw();
     requestAnimationFrame(animate);
 }
@@ -301,4 +329,5 @@ pendulums.push(createPendulum(
     C_A.c1, C_A.c2,
 ));
 resizeCanvas();
+updateCaption();
 animate();
