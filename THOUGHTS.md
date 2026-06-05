@@ -113,9 +113,82 @@ The plan originally said "Pendulum B is spawned at 120° + 0.01° relative to Pe
 - ✅ **Two pendulums without performance degradation**: 4 trails × 1200 points = 4800 points, 160 batch draw calls, 2 pendulum draw calls — well within 60fps budget.
 - ✅ **Divergence point visible**: Pendulum B inherits A's trails → both start at the same origin, then drawTrail separately → the cyan and magenta lines visibly split.
 
+---
+
+# Design Record — Controls (Play/Pause & Reset)
+
+These were added ad-hoc between Phase 3 and Phase 4 as the user identified the need for simulation control before the full UI overlay.
+
+## Play / Pause (Space)
+- **Pause** freezes the simulation completely: all angles, angular velocities, and trail buffers are preserved in place.
+- The animation loop continues running but `stepPhysics()` is skipped when `paused = true`.
+- Rendering continues, showing the frozen pendulum and all accumulated trails.
+- Unpause resumes physics from the exact saved state — no momentum loss, no jump.
+
+## Reset (R)
+- Resets Pendulum A to its initial angles (θ₁ = θ₂ = 0.75π, ω₁ = ω₂ = 0).
+- Clears Pendulum A's trail arrays → trail canvas redraws empty next frame.
+- If chaos mode is active, Pendulum B is removed and `chaosMode` set to `false`.
+- Pause state is **not** changed by reset — user can reset while paused to set up a drag.
+
+## Unified Caption
+A single `updateCaption()` function drives the on-screen text, keeping it DRY:
+
+```
+[Space] Pause  ·  [R] Reset  ·  [C] Chaos
+```
+
+Labels update dynamically when toggled: Pause ↔ Play, Chaos ↔ Single.
+
+---
+
+# Design Record — Phase 4
+
+## Approach
+Phase 4 adds two major pieces: **clickable overlay buttons** (replacing the plain-text caption) and **drag-to-set** for intuitive initial-condition manipulation.
+
+## Overlay Controls
+
+### Design
+- A semi-transparent pill bar centered at the bottom: `background: rgba(10,10,15,0.6)`, `border-radius: 20px`, `backdrop-filter: blur(4px)`.
+- Four `<button>` elements laid out in a flex row with `gap: 12px`.
+- Text buttons start at `rgba(255,255,255,0.35)` and brighten to `0.7` on hover.
+- The buttons are interactive HTML elements (not canvas-drawn), so they're accessible and follow platform conventions.
+
+### Why replace the plain-text caption with buttons?
+The user wanted "just a line of words" initially. For Phase 4, the plan explicitly calls for clickable controls. Buttons are more discoverable than keyboard shortcuts — a new user sees "⏸ Pause" and knows what to click. Keyboard shortcuts (Space, R, C) continue to work for power users.
+
+### Clear Trail
+`clearTrails()` empties the trail arrays of all active pendulums. Since the trail canvas is `clearRect`'d and fully redrawn from scratch each frame, emptying the arrays is sufficient — the next frame naturally shows empty trails. This is separate from Reset: the pendulum keeps its current position and velocity.
+
+## Drag-to-Set
+
+### How it works
+1. User presses Space (or clicks ⏸ Pause) to freeze the simulation.
+2. User hovers over a bob → cursor changes to `grab`.
+3. User clicks on a bob → cursor changes to `grabbing`, drag begins.
+4. User moves the mouse → the bob follows the cursor, constrained to its rod length.
+   - **Dragging bob1**: `θ₁ = atan2(mouseX - PIVOT.x, mouseY - PIVOT.y)`
+   - **Dragging bob2**: `θ₂ = atan2(mouseX - bob1X, mouseY - bob1Y)`
+5. Both angular velocities are set to 0 during drag (static initial condition).
+6. User releases → bob stays at new angle.
+
+### Why `atan2(dx, dy)`?
+In canvas coordinates, `y` increases downward and the pendulum's rest position (θ=0) is straight down. `atan2(dx, dy)` returns 0 when the cursor is directly below the reference point, positive when to the right, and negative when to the left — matching the pendulum's angle convention exactly.
+
+### Touch support
+`touchstart`/`touchmove`/`touchend` handlers mirror the mouse logic exactly, with `passive: true` since full-viewport canvas has no scroll interference.
+
+### Chaos mode interaction
+Dragging only affects **Pendulum A**. Pendulum B keeps its own state. If the user toggles chaos mode off and on after dragging, Pendulum B is re-spawned at A's new angles + offset — giving a fresh divergence from the drag point.
+
+## Acceptance Criteria Status
+- ✅ **Set state by dragging**: Works when paused. Bobs snap to cursor. Velocities zeroed.
+- ✅ **UI < 10% screen**: A slim pill bar at the bottom. Controls are ~35px tall, far less than 10% of viewport.
+
 ## Next Phases (per Plan.md)
 1. ✅ Phase 1 — Physics & High-DPI Foundation
 2. ✅ Phase 2 — Dual-Layer Canvas & Trajectory Aesthetics
 3. ✅ Phase 3 — Chaos Mode & State Architecture
-4. ⬜ Phase 4 — Minimalist Controls & Direct Manipulation
+4. ✅ Phase 4 — Minimalist Controls & Direct Manipulation
 5. ⬜ Phase 5 — Visual Polish & Export

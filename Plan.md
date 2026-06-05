@@ -68,12 +68,15 @@ Build a high-performance, minimalist HTML5 Canvas web application focusing on th
 
 ### Tasks
 1.  **Direct Drag-to-Set (No Sliders)**:
-    *   Instead of cluttered sliders, allow users to click and drag the pendulum bobs to set their initial angles $\theta_1$ and $\theta_2$ while paused.
-2.  **Minimal Overlay Controls**: Create a semi-transparent, elegant overlay with only four elements:
-    *   **Play / Pause** (Spacebar shortcut)
-    *   **Reset** (R key shortcut)
-    *   **Chaos Mode Toggle** (C key shortcut)
-    *   **Clear Trail Button** (To clear trajectory canvas without resetting physics)
+    *   When paused, click and drag either bob on Pendulum A to freely set θ₁ and θ₂. Angles snap to the cursor via `atan2`; velocities are zeroed on release.
+    *   Hover cursor changes to `grab` when near a bob; `grabbing` while dragging.
+    *   Touch support for mobile via touchstart/touchmove/touchend.
+2.  **Minimal Overlay Controls**: Semi-transparent pill bar centered at the bottom with four clickable text buttons:
+    *   **⏸ Pause / ▶ Play** (Spacebar shortcut)
+    *   **↺ Reset** (R key shortcut)
+    *   **⚡ Chaos / ⚡ Single** (C key shortcut)
+    *   **✕ Clear Trail** (clears all trail arrays without affecting pendulum state)
+    *   Buttons are styled as bare text (`rgba(255,255,255,0.35)`) with hover brightening. The bar has `backdrop-filter: blur(4px)` for a frosted-glass effect.
 
 ### Acceptance Criteria
 *   Users can intuitively set the starting state by dragging the bobs on the canvas.

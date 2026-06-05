@@ -40,6 +40,11 @@ const pendulums = [];
 let chaosMode = false;
 let paused = false;
 
+// Drag-to-set state (only active when paused)
+let dragTarget = null;   // 'bob1' | 'bob2' | null
+let dragActive = false;
+const HIT_RADIUS = 22;   // px — how close a click must be to grab a bob
+
 // Color schemes
 const C_A = { c1: '#6080c0', c2: '#00d4ff' };  // Pendulum A — blue / cyan
 const C_B = { c1: '#c060a0', c2: '#ff60c0' };  // Pendulum B — magenta / pink
@@ -188,7 +193,7 @@ function toggleChaos() {
         pendulums.push(b);
         chaosMode = true;
     }
-    updateCaption();
+    updateControls();
 }
 
 function resetSimulation() {
@@ -201,31 +206,155 @@ function resetSimulation() {
     a.trail2 = [];
     computeBobPositions(a);
 
-    // If chaos was active, remove Pendulum B
     if (chaosMode) {
         if (pendulums.length > 1) pendulums.pop();
         chaosMode = false;
     }
-    updateCaption();
+    updateControls();
 }
 
-function updateCaption() {
-    const pauseLabel = paused ? 'Play' : 'Pause';
-    const chaosLabel = chaosMode ? 'Single' : 'Chaos';
-    document.getElementById('caption').textContent =
-        `[Space] ${pauseLabel}  ·  [R] Reset  ·  [C] ${chaosLabel}`;
+function clearTrails() {
+    for (const p of pendulums) {
+        p.trail1 = [];
+        p.trail2 = [];
+    }
 }
+
+function updateControls() {
+    document.getElementById('btn-play').textContent = paused ? '▶ Play' : '⏸ Pause';
+    document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single' : '⚡ Chaos';
+}
+
+// --- Button handlers --------------------------------------------
+
+document.getElementById('btn-play').addEventListener('click', () => {
+    paused = !paused;
+    updateControls();
+});
+
+document.getElementById('btn-reset').addEventListener('click', resetSimulation);
+
+document.getElementById('btn-chaos').addEventListener('click', toggleChaos);
+
+document.getElementById('btn-clear').addEventListener('click', clearTrails);
 
 document.addEventListener('keydown', (e) => {
     if (e.key === ' ' || e.key === 'Spacebar') {
         e.preventDefault();
         paused = !paused;
-        updateCaption();
+        updateControls();
     } else if (e.key === 'r' || e.key === 'R') {
         resetSimulation();
     } else if (e.key === 'c' || e.key === 'C') {
         toggleChaos();
     }
+});
+
+// --- Drag-to-set (only when paused) -----------------------------
+
+canvasB.addEventListener('mousedown', (e) => {
+    if (!paused) return;
+    const rect = canvasB.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const a = pendulums[0];
+
+    // Check bob2 first (drawn on top)
+    if (Math.hypot(mx - a.bob2X, my - a.bob2Y) < HIT_RADIUS) {
+        dragTarget = 'bob2';
+        dragActive = true;
+        canvasB.style.cursor = 'grabbing';
+        return;
+    }
+    if (Math.hypot(mx - a.bob1X, my - a.bob1Y) < HIT_RADIUS) {
+        dragTarget = 'bob1';
+        dragActive = true;
+        canvasB.style.cursor = 'grabbing';
+    }
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (!paused) return;
+    const rect = canvasB.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const a = pendulums[0];
+
+    if (dragActive && dragTarget) {
+        if (dragTarget === 'bob1') {
+            a.theta1 = Math.atan2(mx - PIVOT.x, my - PIVOT.y);
+        } else {
+            a.theta2 = Math.atan2(mx - a.bob1X, my - a.bob1Y);
+        }
+        // Zero velocity — user is setting a static initial condition
+        a.omega1 = 0;
+        a.omega2 = 0;
+        computeBobPositions(a);
+    } else {
+        // Hover cursor hint
+        const d1 = Math.hypot(mx - a.bob1X, my - a.bob1Y);
+        const d2 = Math.hypot(mx - a.bob2X, my - a.bob2Y);
+        canvasB.style.cursor = (d1 < HIT_RADIUS || d2 < HIT_RADIUS) ? 'grab' : 'default';
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    if (dragActive) {
+        dragActive = false;
+        dragTarget = null;
+        canvasB.style.cursor = 'default';
+    }
+});
+
+canvasB.addEventListener('mouseleave', () => {
+    if (dragActive) {
+        dragActive = false;
+        dragTarget = null;
+        canvasB.style.cursor = 'default';
+    }
+});
+
+// Touch support for mobile
+canvasB.addEventListener('touchstart', (e) => {
+    if (!paused) return;
+    const touch = e.touches[0];
+    const rect = canvasB.getBoundingClientRect();
+    const mx = touch.clientX - rect.left;
+    const my = touch.clientY - rect.top;
+    const a = pendulums[0];
+
+    if (Math.hypot(mx - a.bob2X, my - a.bob2Y) < HIT_RADIUS) {
+        dragTarget = 'bob2';
+        dragActive = true;
+        return;
+    }
+    if (Math.hypot(mx - a.bob1X, my - a.bob1Y) < HIT_RADIUS) {
+        dragTarget = 'bob1';
+        dragActive = true;
+    }
+}, { passive: true });
+
+canvasB.addEventListener('touchmove', (e) => {
+    if (!dragActive || !paused) return;
+    const touch = e.touches[0];
+    const rect = canvasB.getBoundingClientRect();
+    const mx = touch.clientX - rect.left;
+    const my = touch.clientY - rect.top;
+    const a = pendulums[0];
+
+    if (dragTarget === 'bob1') {
+        a.theta1 = Math.atan2(mx - PIVOT.x, my - PIVOT.y);
+    } else {
+        a.theta2 = Math.atan2(mx - a.bob1X, my - a.bob1Y);
+    }
+    a.omega1 = 0;
+    a.omega2 = 0;
+    computeBobPositions(a);
+}, { passive: true });
+
+canvasB.addEventListener('touchend', () => {
+    dragActive = false;
+    dragTarget = null;
 });
 
 // --- Rendering --------------------------------------------------
@@ -329,5 +458,5 @@ pendulums.push(createPendulum(
     C_A.c1, C_A.c2,
 ));
 resizeCanvas();
-updateCaption();
+updateControls();
 animate();
