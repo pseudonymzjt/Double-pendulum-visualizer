@@ -291,17 +291,24 @@ function saveArtwork() {
 
 function updateAngleDisplay() {
     const el = document.getElementById('angle-display');
-    const p = (selectedPendulum !== null && pendulums[selectedPendulum])
-        ? pendulums[selectedPendulum] : pendulums[0];
-    if (!p || p.particles.length < 2) { el.textContent = ''; return; }
-    const parts = [];
-    for (let i = 1; i < p.particles.length; i++) {
-        const dx = p.particles[i].x - p.particles[i - 1].x;
-        const dy = p.particles[i].y - p.particles[i - 1].y;
-        const deg = Math.atan2(dx, dy) * 180 / Math.PI;
-        parts.push(`θ${String.fromCharCode(0x2080 + i)} ${deg.toFixed(1)}°`);
+    if (pendulums.length === 0) { el.innerHTML = ''; return; }
+
+    const lines = [];
+    for (let idx = 0; idx < pendulums.length; idx++) {
+        const p = pendulums[idx];
+        if (!p.visible || p.particles.length < 2) continue;
+
+        const parts = [];
+        for (let i = 1; i < p.particles.length; i++) {
+            const dx = p.particles[i].x - p.particles[i - 1].x;
+            const dy = p.particles[i].y - p.particles[i - 1].y;
+            const deg = Math.atan2(dx, dy) * 180 / Math.PI;
+            parts.push(`θ${String.fromCharCode(0x2080 + i)} ${deg.toFixed(1)}°`);
+        }
+        const marker = idx === selectedPendulum ? '▸' : '●';
+        lines.push(`<span style="color:${p.color2}">${marker}</span> ${parts.join('  ')}`);
     }
-    el.textContent = parts.join('  ');
+    el.innerHTML = lines.join('<br>');
 }
 
 function updateControls() {
@@ -465,39 +472,55 @@ function hitTestBob(mx, my) {
 }
 
 function dragParticle(p, partIdx, mx, my) {
-    if (partIdx === 0) return;     // never drag pivot
+    if (partIdx === 0) return;
 
-    if (partIdx === p.particles.length - 1) {
-        // Dragging the tip → rotate the entire chain from the pivot
-        // so inner bobs stay in place relative to the pivot.
-        const rawAngle = Math.atan2(mx - PIVOT.x, my - PIVOT.y) * 180 / Math.PI;
-        const angleDeg = snapAngle(rawAngle);
-        rebuildChain(p, p.constraints.length, angleDeg);
+    // 1. Constrain dragged particle to a circle centered at its parent,
+    //    so the parent stays fixed and only this segment's angle changes.
+    const parent = p.particles[partIdx - 1];
+    const rodLen = p.constraints[partIdx - 1].len;
+    const dx = mx - parent.x;
+    const dy = my - parent.y;
+    const dist = Math.hypot(dx, dy);
+
+    let targetX, targetY;
+    if (dist > 0.001) {
+        const rawAngle = Math.atan2(dx, dy);      // radians, θ=0 = down
+        const snappedRad = snapAngle(rawAngle);
+        targetX = parent.x + rodLen * Math.sin(snappedRad);
+        targetY = parent.y + rodLen * Math.cos(snappedRad);
     } else {
-        // Dragging an inner particle → pin it and solve constraints
-        p.particles[partIdx].x = mx;
-        p.particles[partIdx].y = my;
-        p.particles[partIdx].px = mx;
-        p.particles[partIdx].py = my;
-        for (let iter = 0; iter < CONSTRAINT_ITERS; iter++) {
-            for (const c of p.constraints) {
-                const a = p.particles[c.a];
-                const b = p.particles[c.b];
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const dist = Math.hypot(dx, dy);
-                if (dist < 0.001) continue;
-                const diff = (c.len - dist) / dist;
-                const cx = dx * 0.5 * diff;
-                const cy = dy * 0.5 * diff;
-                if (c.a !== 0 && c.a !== partIdx) { a.x -= cx; a.y -= cy; }
-                if (c.b !== partIdx) { b.x += cx; b.y += cy; }
-            }
-            // Re-pin the dragged particle so it doesn't drift
-            p.particles[partIdx].x = mx;
-            p.particles[partIdx].y = my;
-        }
+        targetX = parent.x;
+        targetY = parent.y + rodLen;
     }
+    p.particles[partIdx].x = targetX;
+    p.particles[partIdx].y = targetY;
+    p.particles[partIdx].px = targetX;
+    p.particles[partIdx].py = targetY;
+
+    // 2. Propagate forward from drag point toward tip so
+    //    all downstream links maintain their lengths.
+    for (let i = partIdx; i < p.constraints.length; i++) {
+        const c = p.constraints[i];
+        const a = p.particles[c.a];
+        const b = p.particles[c.b];
+        const fdx = b.x - a.x;
+        const fdy = b.y - a.y;
+        const fdist = Math.hypot(fdx, fdy);
+        let bx, by;
+        if (fdist > 0.001) {
+            const scale = c.len / fdist;
+            bx = a.x + fdx * scale;
+            by = a.y + fdy * scale;
+        } else {
+            bx = a.x;
+            by = a.y + c.len;
+        }
+        b.x = bx;
+        b.y = by;
+        b.px = bx;
+        b.py = by;
+    }
+
     syncBobPositions(p);
 }
 

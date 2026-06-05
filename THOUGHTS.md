@@ -374,16 +374,41 @@ For N-link pendulums, the display shows N entries: `θ₁ xx° θ₂ xx° … θ
 
 **Fix**: Changed `resetSimulation()` to loop over every pendulum in the array, rebuilding each chain at `DEFAULT_ANGLE_DEG (135°)`, syncing bob positions, and clearing all trail arrays. Chaos mode still removes Pendulum B and resets chaosMode to false.
 
-## Bug 2: Dragging the tip moved the inner bob unpredictably
+## Bug 2: Dragging the tip should rotate around the inner ball, not the pivot
 
-When dragging the tip particle, the Verlet constraint solver's 50/50 correction split pushed the inner bob around: constraint 0→1 moved particle 1 (only free end), then constraint 1→2 also moved particle 1 (only free end), causing it to drift from its pivot-aligned position. The user reported: *"when trying to adjust the position of the second ball, the first ball moves accordingly. It should not. If the first is moved, the second should be moved and that's correct."*
+Initial attempt rebuilt the whole chain at the pivot-to-mouse angle (collinear rotation from pivot). The user rejected this: *"I mean when moving outer ball, I expect it can be moved on a circle with the centering point at the inner ball."*
 
-**Root cause**: The constraint solver treats all non-pinned particles equally, but during tip drag the inner bob becomes the sole degree of freedom absorbing corrections from both adjacent constraints — giving it double the displacement.
+**Root cause**: The constraint solver's 50/50 correction split moved the inner bob because it was the only free end absorbing corrections from both adjacent constraints. But even the pivot-rotation fix was wrong — the tip should swing around its parent (inner bob), keeping the parent fixed.
 
-**Fix**: Two-pronged approach:
+**Final fix — circle-constraint drag**:
 
-1. **Tip drag** (`partIdx === particles.length - 1`): Instead of running the constraint solver, rebuild the entire chain at the pivot-to-mouse angle via `rebuildChain()`. All segments are collinear — the whole chain rotates rigidly from the pivot. This completely prevents the inner bob from moving independently.
+When dragging **any** particle:
 
-2. **Inner particle drag** (any other index): Pin the dragged particle to mouse and run the constraint solver, but **re-pin after every iteration**. This prevents the dragged particle from drifting during iteration while still allowing the rest of the chain to adjust naturally.
+1. **Constrain to parent's circle**: Compute the angle from the parent particle (partIdx − 1) to the mouse. Snap it (`snapAngle`). Place the dragged particle at `rodLen` from the parent in that direction. The parent stays completely fixed — only this segment's angle changes.
 
-The snap-to-angle (`SNAP_DEG = 15`, `SNAP_THRESHOLD = 5`) is applied to the pivot-to-mouse angle during tip drag, preserving the magnetic-alignment feel.
+2. **Forward propagate**: For each constraint from `partIdx` through the tip, position each child particle at exactly `constraint.len` from its parent, preserving the direction. This keeps all downstream links intact without moving any particle upstream of the drag point.
+
+This approach works for any particle in an N-link chain and naturally handles snap-to-angle on the segment being adjusted.
+
+---
+
+# Feature — All-Pendulums Angle Display
+
+## Requirement
+The user wanted to see every pendulum's angles simultaneously, not just the selected one's. Previously `updateAngleDisplay()` showed only one pendulum (selected or first) centered at the top of the screen.
+
+## Implementation
+
+### Display
+- Moved the `#angle-display` element from `top: 14px; left: 50%; transform: translateX(-50%)` to `top: 14px; left: 14px` (top-left corner).
+- Added a frosted-glass background (`rgba(10,10,15,0.4)` + `backdrop-filter: blur(4px)`) with rounded corners and padding, making it a discrete sidebar panel rather than floating text.
+- Each visible pendulum gets one line: a colored marker (`▸` for selected, `●` for others) in the pendulum's `color2`, followed by all segment angles (`θ₁ xx.x°  θ₂ xx.x° …`).
+- `max-height: calc(100vh - 100px)` with `overflow-y: auto` prevents overflow when many pendulums are on screen.
+
+### Performance
+`innerHTML` is set every frame (60 fps) with small HTML fragments (~100-200 bytes). This is fast enough — no layout thrashing since the element has `pointer-events: none` and uses `backdrop-filter` (GPU-composited).
+
+### Edge cases
+- Hidden pendulums (`visible: false`) are skipped.
+- Pendulums with fewer than 2 particles are skipped.
+- Empty state: `pendulums.length === 0` clears the display.
