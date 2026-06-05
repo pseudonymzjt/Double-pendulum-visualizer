@@ -191,6 +191,7 @@ function toggleChaos() {
             a,
         );
         pendulums.push(b);
+        computeBobPositions(b);
         chaosMode = true;
     }
     updateControls();
