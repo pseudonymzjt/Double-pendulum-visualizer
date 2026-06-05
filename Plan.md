@@ -87,9 +87,9 @@ Build a high-performance, minimalist HTML5 Canvas web application focusing on th
 ## Phase 5 — Visual Polish & Export
 
 ### Tasks
-1.  **Dynamic Velocity-Based Color**: Adjust the trajectory line width or color intensity based on the speed of the second bob (e.g., brighter and thinner when fast, deeper and thicker when slow).
-2.  **Slow-Motion Mode**: Add a subtle toggle for a 0.5x speed simulation to allow users to appreciate the high-velocity chaotic transitions.
-3.  **Export Artwork**: Add a "Save Artwork" button that merges both canvas layers and downloads a high-resolution PNG image of the generated chaotic trajectory.
+1.  **Dynamic Velocity-Based Line Width**: bob2 trail line width varies continuously with speed — fast = thin (0.8 px), slow = thick (3.0 px). Speed is stored per trail point as `{x, y, s}` where `s` = pixel-distance from previous frame. `drawTrail()` averages speed per batch and maps to `lineWidth`.
+2.  **Slow-Motion Mode**: Toggle button `⏱ ½× Slow` / `⏱ 1× Speed`. Halves the physics dt from `1/60` to `1/120` when active, effectively running the simulation at 0.5× speed. The animation loop and rendering remain at 60 fps.
+3.  **Export Artwork**: `⬇ Save` button merges Layer A (trails) + Layer B (pendulum) onto a temporary canvas at native HiDPI resolution and triggers a download via `<a download>` + `toDataURL('image/png')`.
 
 ### Acceptance Criteria
 *   The generated trajectory has artistic depth (variation in line weight and glow).

@@ -39,6 +39,7 @@ function createPendulum(theta1, theta2, color1, color2, copyTrailsFrom) {
 const pendulums = [];
 let chaosMode = false;
 let paused = false;
+let slowMo = false;
 
 // Drag-to-set state (only active when paused)
 let dragTarget = null;   // 'bob1' | 'bob2' | null
@@ -156,7 +157,7 @@ function computeBobPositions(p) {
 
 /** Advance all active pendulums by one frame. */
 function stepPhysics() {
-    const dt = 1 / 60;
+    const dt = slowMo ? 1 / 120 : 1 / 60;
     const h = dt / SUB_STEPS;
 
     for (const p of pendulums) {
@@ -171,7 +172,11 @@ function stepPhysics() {
 
         p.trail1.push({ x: p.bob1X, y: p.bob1Y });
         if (p.trail1.length > TRAIL_LENGTH) p.trail1.shift();
-        p.trail2.push({ x: p.bob2X, y: p.bob2Y });
+
+        // Store speed with trail2 for velocity-based line width
+        const prev = p.trail2.length > 0 ? p.trail2[p.trail2.length - 1] : null;
+        const speed = prev ? Math.hypot(p.bob2X - prev.x, p.bob2Y - prev.y) : 0;
+        p.trail2.push({ x: p.bob2X, y: p.bob2Y, s: speed });
         if (p.trail2.length > TRAIL_LENGTH) p.trail2.shift();
     }
 }
@@ -221,9 +226,24 @@ function clearTrails() {
     }
 }
 
+function saveArtwork() {
+    const dpr = window.devicePixelRatio || 1;
+    const tmp = document.createElement('canvas');
+    tmp.width = cw * dpr;
+    tmp.height = ch * dpr;
+    const tc = tmp.getContext('2d');
+    tc.drawImage(canvasA, 0, 0);
+    tc.drawImage(canvasB, 0, 0);
+    const link = document.createElement('a');
+    link.download = 'double-pendulum-art.png';
+    link.href = tmp.toDataURL('image/png');
+    link.click();
+}
+
 function updateControls() {
     document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
     document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
+    document.getElementById('btn-slow').textContent = slowMo ? '⏱ 1× Speed' : '⏱ ½× Slow';
 }
 
 // --- Button handlers --------------------------------------------
@@ -238,6 +258,13 @@ document.getElementById('btn-reset').addEventListener('click', resetSimulation);
 document.getElementById('btn-chaos').addEventListener('click', toggleChaos);
 
 document.getElementById('btn-clear').addEventListener('click', clearTrails);
+
+document.getElementById('btn-slow').addEventListener('click', () => {
+    slowMo = !slowMo;
+    updateControls();
+});
+
+document.getElementById('btn-save').addEventListener('click', saveArtwork);
 
 document.addEventListener('keydown', (e) => {
     if (e.key === ' ' || e.key === 'Spacebar') {
@@ -360,7 +387,7 @@ canvasB.addEventListener('touchend', () => {
 
 // --- Rendering --------------------------------------------------
 
-function drawTrail(trail, hexColor) {
+function drawTrail(trail, hexColor, velocityStyle) {
     const len = trail.length;
     if (len < 2) return;
 
@@ -379,13 +406,27 @@ function drawTrail(trail, hexColor) {
         const t = (batch + 1) / TRAIL_BATCHES;
         const alpha = 0.02 + t * 0.88;
 
+        // Velocity-based line width: fast → thin (0.8), slow → thick (3.0)
+        let lineW = 1.5;
+        if (velocityStyle) {
+            let sum = 0, count = 0;
+            for (let i = segStart; i <= segEnd; i++) {
+                if (trail[i].s !== undefined) { sum += trail[i].s; count++; }
+            }
+            if (count > 0) {
+                const avg = sum / count;
+                const norm = Math.min(avg / 150, 1);
+                lineW = 3.0 - norm * 2.2;
+            }
+        }
+
         ctxA.beginPath();
         ctxA.moveTo(trail[segStart].x, trail[segStart].y);
         for (let i = segStart + 1; i <= segEnd; i++) {
             ctxA.lineTo(trail[i].x, trail[i].y);
         }
         ctxA.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(4)})`;
-        ctxA.lineWidth = 1.5;
+        ctxA.lineWidth = lineW;
         ctxA.stroke();
     }
 }
@@ -423,11 +464,11 @@ function drawPendulum(p) {
 }
 
 function draw() {
-    // Layer A — trails
+    // Layer A — trails (bob2 gets velocity-based line width)
     ctxA.clearRect(0, 0, cw, ch);
     for (const p of pendulums) {
-        drawTrail(p.trail1, p.color1);
-        drawTrail(p.trail2, p.color2);
+        drawTrail(p.trail1, p.color1, false);
+        drawTrail(p.trail2, p.color2, true);
     }
 
     // Layer B — pendulums (draw A first so B is on top)

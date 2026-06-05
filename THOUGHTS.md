@@ -186,9 +186,54 @@ Dragging only affects **Pendulum A**. Pendulum B keeps its own state. If the use
 - ✅ **Set state by dragging**: Works when paused. Bobs snap to cursor. Velocities zeroed.
 - ✅ **UI < 10% screen**: A slim pill bar at the bottom. Controls are ~35px tall, far less than 10% of viewport.
 
-## Next Phases (per Plan.md)
+---
+
+# Design Record — Phase 5
+
+## Approach
+Implemented all three Phase 5 features with minimal code changes, reusing existing infrastructure wherever possible.
+
+## Velocity-Based Line Width
+
+### How it works
+- Each `trail2` point now stores `{x, y, s}` where `s` = pixel-distance moved since the previous frame (a proxy for instantaneous speed).
+- In `drawTrail`, when `velocityStyle = true`, each batch's average `s` is computed and mapped to `lineWidth`:
+  - `avg = 0` (stationary) → `lineW = 3.0` (thick, deep)
+  - `avg ≥ 150` (fast) → `lineW = 0.8` (thin, bright)
+  - Linear interpolation between these extremes.
+- bob1's trail (`trail1`) does **not** get velocity styling — the plan specifically mentions "the speed of the second bob."
+
+### Why pixel-distance instead of angular velocity?
+`Math.hypot(Δx, Δy)` is already available from the position computation, adds zero overhead, and directly measures visual speed on screen. Using angular velocity would require an additional formula and wouldn't account for the geometry-dependent lever-arm amplification.
+
+## Slow-Motion Mode
+
+### Implementation
+- A single boolean `slowMo` toggles the physics dt between `1/60` and `1/120`.
+- The rendering loop remains at 60 fps via `requestAnimationFrame`.
+- When toggled on, the pendulum appears to move at half speed, letting the viewer track intricate chaotic motion.
+- No sub-step parameter changes — `SUB_STEPS = 4` stays constant, so each sub-step is `dt / 4 / 4 = dt/16` in slow-mo vs `dt/4 = 1/240` in normal. The smaller sub-step in slow-mo actually improves energy conservation.
+
+## Export Artwork
+
+### Implementation
+A 10-line function that:
+1. Creates an off-screen `<canvas>` at the same HiDPI resolution as the display.
+2. Draws `canvasA` (trails) then `canvasB` (pendulum) onto it — the order matches visual stacking.
+3. Triggers a browser download via a temporary `<a>` element with `download="double-pendulum-art.png"` and `href` set to `canvas.toDataURL('image/png')`.
+
+The exported image includes the full accumulated trajectory and the pendulum at the exact moment of export — a true snapshot of the artwork.
+
+## Controls Bar Update
+The pill bar now holds 6 buttons. `gap: 12px` and `font-size: 12px` kept the bar compact enough for desktop and tablet viewports.
+
+## Acceptance Criteria Status
+- ✅ **Artistic depth**: Trail thickness varies organically with pendulum speed.
+- ✅ **Download**: Single-click saves a merged HiDPI PNG of both layers.
+
+## All Phases Complete 🎉
 1. ✅ Phase 1 — Physics & High-DPI Foundation
 2. ✅ Phase 2 — Dual-Layer Canvas & Trajectory Aesthetics
 3. ✅ Phase 3 — Chaos Mode & State Architecture
 4. ✅ Phase 4 — Minimalist Controls & Direct Manipulation
-5. ⬜ Phase 5 — Visual Polish & Export
+5. ✅ Phase 5 — Visual Polish & Export
