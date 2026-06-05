@@ -16,6 +16,7 @@ const SNAP_THRESHOLD = 5;
 const LINK_SCALE = 0.85;         // length multiplier when adding joints
 const MIN_LINKS = 2;             // minimum links per pendulum
 const HIT_RADIUS = 22;           // px — bob grab radius
+const VERLET_G_SCALE = 8;        // gravity multiplier for Verlet (RK4-equivalent feel)
 
 function snapAngle(rad) {
     const deg = rad * 180 / Math.PI;
@@ -161,7 +162,7 @@ window.addEventListener('resize', resizeCanvas);
 
 function verletStep(p, dt) {
     const h = dt / SUB_STEPS;
-    const gravPx = G * pxPerUnit;          // px/s²
+    const gravPx = G * pxPerUnit * VERLET_G_SCALE;  // px/s²
 
     for (let s = 0; s < SUB_STEPS; s++) {
         // 1. Integrate all free particles (skip index 0 = pivot)
@@ -416,6 +417,8 @@ function addJoint() {
         py: tip.y,
     });
     p.constraints.push({ a: last, b: last + 1, len: newLen });
+    p.trail = [];        // old trail tracked a different tip
+    syncBobPositions(p);
     updateControls();
 }
 
@@ -425,6 +428,8 @@ function removeJoint() {
     if (p.constraints.length <= MIN_LINKS) return;
     p.particles.pop();
     p.constraints.pop();
+    p.trail = [];        // old trail tracked the now-removed tip
+    syncBobPositions(p);
     updateControls();
 }
 
