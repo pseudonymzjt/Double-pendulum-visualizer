@@ -623,7 +623,11 @@ function dragParticle(p, partIdx, mx, my) {
     syncBobPositions(p);
 }
 
+// Suppress the browser context menu on the canvas
+canvasB.addEventListener('contextmenu', (e) => e.preventDefault());
+
 canvasB.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
     if (!paused) return;
     const rect = canvasB.getBoundingClientRect();
     const hit = hitTestBob(e.clientX - rect.left, e.clientY - rect.top);
