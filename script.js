@@ -420,7 +420,7 @@ function updateAngleDisplay() {
 
         const parts = [];
         for (let i = 0; i < p.N; i++) {
-            const deg = p.thetas[i] * 180 / Math.PI;
+            const deg = ((p.thetas[i] * 180 / Math.PI) % 360 + 360) % 360;
             parts.push(`θ${String.fromCharCode(0x2080 + i + 1)} ${deg.toFixed(1)}°`);
         }
         const marker = idx === selectedPendulum ? '▸' : '●';

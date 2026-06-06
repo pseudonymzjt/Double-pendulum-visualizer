@@ -412,6 +412,7 @@ The user wanted to see every pendulum's angles simultaneously, not just the sele
 - Hidden pendulums (`visible: false`) are skipped.
 - Pendulums with fewer than 2 particles are skipped.
 - Empty state: `pendulums.length === 0` clears the display.
+- Angles normalized to [0°, 360°) via `((deg % 360) + 360) % 360` — prevents accumulated wraps from showing huge values like 1080° after many rotations.
 
 ---
 
