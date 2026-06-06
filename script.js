@@ -570,11 +570,12 @@ function renderPhasePortrait() {
     drawPlotGrid(ctx);
     drawZeroAxes(ctx, xRange.min, xRange.max, yRange.min, yRange.max);
 
-    // Update title to reflect pendulum identity
+    // Update title to reflect pendulum identity and navigation hint
     const idx = pendulums.indexOf(p);
     const pid = idx >= 0 ? idx : 0;
+    const total = pendulums.filter(pp => pp.visible).length;
     document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
-        .textContent = `Phase Space — Pendulum ${pid}  θ₁ vs ω₁`;
+        .textContent = `Phase Space — Pendulum ${pid}  θ₁ vs ω₁    [ ] cycle`;
 
     drawAxisLabels(ctx, 'θ₁', 'ω₁');
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
@@ -770,6 +771,17 @@ document.addEventListener('keydown', (e) => {
         toggleChaos();
     } else if (e.key === 'm' || e.key === 'M') {
         toggleMetricsPanel();
+    } else if ((e.key === '[' || e.key === ']') && metricsVisible) {
+        // Cycle through visible pendulums while metrics panel is open
+        const visible = pendulums.filter(p => p.visible);
+        if (visible.length < 2) return;
+        const cur = getTrackedPendulum();
+        const curIdx = visible.indexOf(cur);
+        const next = e.key === ']'
+            ? visible[(curIdx + 1) % visible.length]
+            : visible[(curIdx - 1 + visible.length) % visible.length];
+        const nextGlobalIdx = pendulums.indexOf(next);
+        selectPendulum(nextGlobalIdx);
     }
 });
 
