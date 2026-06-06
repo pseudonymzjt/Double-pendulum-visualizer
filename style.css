@@ -29,7 +29,7 @@ html, body {
     bottom: 18px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 2;
+    z-index: 4;
     display: flex;
     gap: 12px;
     background: rgba(10, 10, 15, 0.6);
@@ -67,7 +67,7 @@ html, body {
     position: fixed;
     top: 14px;
     left: 14px;
-    z-index: 2;
+    z-index: 4;
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
     font-size: 11px;
     color: rgba(255, 255, 255, 0.35);
@@ -88,7 +88,7 @@ html, body {
     bottom: 62px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 2;
+    z-index: 4;
     display: none;
     gap: 6px;
     background: rgba(10, 10, 15, 0.6);
@@ -116,6 +116,55 @@ html, body {
     opacity: 1;
 }
 
-#canvas-b {
-    z-index: 1;
+/* --- Metrics Panel (Phase 8) --- Full-screen overlay */
+
+#metrics-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    padding: 48px 24px 80px;
+    gap: 6px;
+    background: rgba(10, 10, 15, 0.94);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    user-select: none;
+}
+
+#metrics-panel.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.plot-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.plot-title {
+    font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    margin-bottom: 3px;
+    user-select: none;
+    letter-spacing: 0.4px;
+    padding-left: 2px;
+}
+
+#plot-phase,
+#plot-energy {
+    width: 100%;
+    flex: 1;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    min-height: 0;
 }

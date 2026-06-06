@@ -165,3 +165,37 @@ Replace RK4 angle-based physics with Verlet integration + distance constraints, 
 * ✅ Users can add links up to N=5 without visible jitter or explosion.
 * ✅ Verlet constraints remain stable — 4 sub-steps × 10 iterations = 40 constraint solves/frame.
 * ✅ All particles leave trails; inner trails are shorter and dimmer than the tip's trail.
+
+---
+
+## Phase 8 — Real-time Mathematical Analysis & Phase Plots
+
+### Objective
+Provide users with real-time mathematical insight into the chaotic system by plotting dynamic charts (such as Phase Space Portraits and Energy-Time Series) on-demand, without relying on external plotting libraries.
+
+### Tasks
+1. **Physical Metrics Collector**:
+   * Calculate real-time mathematical and thermodynamic metrics at every step of the physics loop:
+     * Kinetic Energy ($T = \sum \frac{1}{2} I_i \omega_i^2$)
+     * Potential Energy ($V = \sum m_i g h_i$)
+     * Total Energy ($E_{total} = T + V$)
+   * Maintain a fixed-size ring buffer (e.g., maximum 300 data points) to store rolling historical values of $\theta_i$, $\omega_i$, and $E_{total}$ [12].
+2. **Lightweight Canvas Plotter**:
+   * Write a native canvas utility inside the codebase to render a minimalist Cartesian coordinate system:
+     * Draw dashed grid lines, X/Y axes, and origin points.
+     * Render neat text labels (e.g., "$\theta$", "$\omega$") using standard `ctx.fillText` with monospace fonts.
+3. **Phase Space Portrait (Attractor Visualizer)**:
+   * Dedicate a section of the mathematical panel to plot **Phase Space** (e.g., $\theta_1$ on the X-axis vs. $\omega_1$ on the Y-axis, or $\theta_1$ vs. $\theta_2$).
+   * Draw the historical path in phase space as a continuous, thin, glowing line, illustrating the formation of the chaotic attractor over time.
+4. **Energy Conservation Time-Series**:
+   * Plot a rolling line chart displaying Kinetic Energy ($T$), Potential Energy ($V$), and Total Energy ($E$) over time.
+   * *Aesthetic Goal*: Visually demonstrate that while $T$ and $V$ oscillate violently, $E_{total}$ remains a perfectly flat, stable line (proving the high precision of the RK4 integrator).
+5. **On-Demand Metrics Panel (Keyboard Toggle)**:
+   * Bind the **`M` key** (Metrics) to slide out a semi-transparent, side-docked mathematical panel containing these live-updating plots [10].
+   * Ensure that when the panel is hidden, no rendering calculations are wasted on these charts to preserve main loop performance.
+
+### Acceptance Criteria
+* Pressing `M` smoothly toggles the mathematical analysis overlay [10].
+* The Phase Space plot and Energy-Time plots render in real-time, matching the movement of the pendulums without causing any UI lag.
+* The Total Energy line remains visibly flat and stable, validating the mathematical integrity of the simulation.
+* No external libraries (like Chart.js or D3) are loaded. All grids, lines, and text are drawn via native HTML5 Canvas 2D contexts.

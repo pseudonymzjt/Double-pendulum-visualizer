@@ -504,3 +504,82 @@ Fix: Added `if (e.button !== 0) return;` at the top of the handler so only left-
 - **style.css**: No changes.
 - **index.html**: No changes.
 
+---
+
+# Phase 8 — Real-time Mathematical Analysis & Phase Plots
+
+## Objective
+Provide real-time mathematical insight into the chaotic system by plotting Phase Space Portraits and Energy Time-Series on-demand, using native Canvas 2D.
+
+## Implementation
+
+### Metrics Collection
+- `computeEnergy()` calculates KE, PE, and totalE from the full Lagrangian:
+  - **KE** = ½ Σᵢⱼ lᵢ lⱼ (N−max(i,j)) cos(θᵢ−θⱼ) ωᵢ ωⱼ — uses the same mass matrix as the physics engine
+  - **PE** = −g Σᵢ (N−i) lᵢ cos(θᵢ)
+  - **totalE** = KE + PE (conserved quantity)
+- 300-point ring buffer stores rolling snapshots of θᵢ, ωᵢ, KE, PE, totalE
+- Tracks the selected pendulum (or pendulums[0] if none selected)
+
+### Plot Rendering
+- Two native canvas plots inside a full-screen overlay
+- **Phase Space Portrait**: θ₁ on X-axis vs ω₁ on Y-axis, rendered as a fading 48-batch line (old → dim, new → bright). Auto-scaling axes with zero lines and dashed grid.
+- **Energy Time-Series**: Three solid lines (KE in coral `#ff6060`, PE in green `#30ff88`, totalE in white `#ffffff`) with a shared auto-scaled Y range and color-coded labels.
+- Grid, zero axes, and axis labels drawn via native Canvas 2D API (no libraries).
+
+### Panel
+- Toggled via **M** key or `📊 Metrics [M]` button in controls bar
+- Full-screen dark overlay (`rgba(10,10,15,0.94)`, `backdrop-filter: blur(6px)`)
+- Two plots stacked vertically via flexbox, each taking ~half the available height
+- When hidden, plot rendering is skipped entirely; metrics collection stops after clearing data
+
+## Bugs Encountered & Fixes
+
+### Bug 1: Energy plot showed no readings (blank canvas)
+
+**Root cause** — two independent bugs:
+
+1. **`(_, i) => i` index not passed**. `drawSolidLine` calls `getX(data[i])` with a single argument, but the getter `(_, i) => i` expects a second argument for the index. Without the second arg, `i` is `undefined` and `mapX(undefined, ...)` produces `NaN` for every X coordinate. The path never draws.
+
+   ```
+   Before:  const px = mapX(getX(data[i]), xMin, xMax, PLOT_W);
+   After:   const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
+   ```
+
+   Same fix applied to `drawFadingLine` (harmless there since the phase portrait getter `d => d.thetas[0]` ignores the extra arg).
+
+2. **`const` assignment to `PLOT_W`/`PLOT_H`**. The original code declared `const PLOT_W = 290; const PLOT_H = 180;`. `setupPlotCanvas` needed to reassign them to the CSS-computed dimensions (`canvas.clientWidth`/`clientHeight`) for the full-screen layout. Changed to `let`.
+
+### Bug 2: Total energy not conserved (341% "drift")
+
+After the initial implementation, `totalE` fluctuated wildly from -29 to +113 — far from the flat line the acceptance criteria required.
+
+**Root cause**: The potential energy formula used the y-down canvas convention (`PE = g Σ (N−i) lᵢ cos(θᵢ)`) but the physics engine's Lagrangian uses the y-up convention. In the equations of motion, the gravity term is `−g (N−i) lᵢ sin(θᵢ)` (cf. `derivativesArray` line 237), which matches the E-L equation only when `V = −g Σ (N−i) lᵢ cos(θᵢ)`.
+
+**Fix**: Negated the PE formula:
+```
+Before:  PE =  g Σ (N−i) lᵢ cos(θᵢ)   →  totalE drifts
+After:   PE = −g Σ (N−i) lᵢ cos(θᵢ)   →  totalE constant to 0.0000%
+```
+
+Verified: initialE = 29.6545, finalE = 29.6545, drift = -0.0000% over 300 steps.
+
+### Bug 3: Side panel too small for readable plots
+
+The initial right-side docked panel (290px wide) made the plots too small to interpret. The user requested full-screen instead.
+
+**Fix**: Replaced the side-panel layout with a full-screen flexbox overlay. Plot canvases are sized by CSS (`flex: 1` inside a flex column), and JavaScript reads `canvas.clientWidth`/`clientHeight` each frame to set the actual canvas pixel dimensions at `devicePixelRatio` resolution. The plots now fill the available viewport area.
+
+### Bug 4: M key not discoverable
+
+The original implementation only bound the `M` key but had no visible hint.
+
+**Fix**: Added `📊 Metrics [M]` button to the bottom controls bar, matching the convention of other operations (e.g., `⏸ Pause [Space]`, `⚡ Chaos [C]`). The button calls `toggleMetricsPanel()` on click, and the keyboard shortcut works independently.
+
+## Acceptance Criteria Status
+- ✅ Pressing `M` smoothly toggles the full-screen analysis overlay.
+- ✅ Phase Space plot renders the attractor trail in real-time (fading 48-batch line).
+- ✅ Energy plot shows KE (coral), PE (green), totalE (white) — totalE is perfectly flat.
+- ✅ No external libraries — all grids, lines, labels via native Canvas 2D API.
+- ✅ Panel hidden = no plot rendering; metrics cleared and collection stops.
+

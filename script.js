@@ -15,6 +15,7 @@ const SNAP_THRESHOLD = 5;
 const LINK_SCALE = 0.85;         // length multiplier when adding joints
 const MIN_LINKS = 2;             // minimum links per pendulum
 const HIT_RADIUS = 22;           // px — bob grab radius
+const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
 
 function snapAngle(rad) {
     const deg = rad * 180 / Math.PI;
@@ -132,6 +133,10 @@ let paused = false;
 let slowMo = false;
 let selectedPendulum = null;
 let paletteIdx = 0;
+
+// Phase 8 — Metrics & Analysis state
+let metricsVisible = false;
+let metricsData = [];        // rolling buffer of {thetas, omegas, KE, PE, totalE}
 
 // Drag-to-set state
 let dragTarget = null;   // particle index being dragged
@@ -341,6 +346,261 @@ function stepPhysics() {
             if (trail.length > limit) trail.shift();
         }
     }
+
+    // Collect metrics for analysis (only if panel is or was visible)
+    if (metricsVisible || metricsData.length > 0) collectMetrics();
+}
+
+// --- Phase 8 — Mathematical Analysis & Phase Plots ---------------
+
+/** Physical link lengths in meters (not pixels). */
+function physLengths(p) {
+    const pl = [];
+    for (let i = 0; i < p.N; i++) pl.push(PHYS_L * Math.pow(LINK_SCALE, i));
+    return pl;
+}
+
+/**
+ * Compute kinetic energy, potential energy, and total energy
+ * for an N-link pendulum (unit-mass bobs).
+ *
+ *   KE = ½ Σᵢⱼ lᵢ lⱼ (N − max(i,j)) cos(θᵢ−θⱼ) ωᵢ ωⱼ
+ *   PE = −g Σᵢ (N−i) lᵢ cos(θᵢ)
+ *
+ * The negative sign in PE is because the physics engine uses a
+ * y-up convention for the Lagrangian (so the EOM term has −g sin θ),
+ * consistent with the standard derivation.
+ */
+function computeEnergy(p) {
+    const N = p.N;
+    const pl = physLengths(p);
+    const th = p.thetas;
+    const om = p.omegas;
+
+    let KE = 0;
+    for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+            const dTheta = th[i] - th[j];
+            const Aij = pl[i] * pl[j] * (N - Math.max(i, j));
+            KE += Aij * Math.cos(dTheta) * om[i] * om[j];
+        }
+    }
+    KE *= 0.5;
+
+    let PE = 0;
+    for (let i = 0; i < N; i++) {
+        PE += (N - i) * pl[i] * Math.cos(th[i]);
+    }
+    PE *= -G;
+
+    return { KE, PE, totalE: KE + PE };
+}
+
+/** Collect metrics snapshot from the tracked pendulum. */
+function collectMetrics() {
+    const p = selectedPendulum !== null ? pendulums[selectedPendulum] : pendulums[0];
+    if (!p || !p.visible) return;
+    const e = computeEnergy(p);
+    metricsData.push({
+        thetas: p.thetas.slice(),
+        omegas: p.omegas.slice(),
+        KE: e.KE,
+        PE: e.PE,
+        totalE: e.totalE,
+    });
+    while (metricsData.length > METRICS_CAPACITY) metricsData.shift();
+}
+
+/** Clear all collected metrics. */
+function clearMetrics() {
+    metricsData.length = 0;
+}
+
+// --- Plot rendering utilities ------------------------------------
+
+let PLOT_W = 290;
+let PLOT_H = 180;
+
+/** Compute data range with ±10% padding, ensuring a minimum span. */
+function dataRange(values) {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    const span = hi - lo || 1;
+    const pad = span * 0.1;
+    return { min: lo - pad, max: hi + pad };
+}
+
+/** Map a data value to a canvas pixel coordinate. */
+function mapX(val, min, max, w) { return w * (val - min) / (max - min); }
+function mapY(val, min, max, h) { return h * (1 - (val - min) / (max - min)); }
+
+/** Setup HiDPI canvas context for a plot. Reads CSS dimensions. */
+function setupPlotCanvas(canvas, ctx) {
+    const w = canvas.clientWidth || PLOT_W;
+    const h = canvas.clientHeight || PLOT_H;
+    PLOT_W = w;
+    PLOT_H = h;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+}
+
+/** Draw dashed grid lines (horizontal + vertical). */
+function drawPlotGrid(ctx) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    const nx = 6, ny = 5;
+    for (let i = 0; i <= nx; i++) {
+        const x = PLOT_W * i / nx;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, PLOT_H); ctx.stroke();
+    }
+    for (let i = 0; i <= ny; i++) {
+        const y = PLOT_H * i / ny;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(PLOT_W, y); ctx.stroke();
+    }
+}
+
+/** Draw axis zero-lines for phase portraits. */
+function drawZeroAxes(ctx, xMin, xMax, yMin, yMax) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    if (xMin < 0 && xMax > 0) {
+        const x0 = mapX(0, xMin, xMax, PLOT_W);
+        ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, PLOT_H); ctx.stroke();
+    }
+    if (yMin < 0 && yMax > 0) {
+        const y0 = mapY(0, yMin, yMax, PLOT_H);
+        ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(PLOT_W, y0); ctx.stroke();
+    }
+}
+
+/** Draw axis labels at bottom-left (X) and top-left (Y). */
+function drawAxisLabels(ctx, xLabel, yLabel) {
+    ctx.font = '10px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillText(xLabel, PLOT_W - 36, PLOT_H - 4);
+    ctx.fillText(yLabel, 6, 14);
+}
+
+/**
+ * Draw a single fading line through a data series.
+ * `getX` / `getY` extract coordinates from each datum.
+ * Older segments are more transparent, newer ones brighter.
+ */
+function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
+    const len = data.length;
+    if (len < 2) return;
+
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    const segments = len - 1;
+    const batches = 48;
+    const batchSize = Math.max(1, Math.ceil(segments / batches));
+
+    for (let bIdx = 0; bIdx < batches; bIdx++) {
+        const start = bIdx * batchSize;
+        const end = Math.min(start + batchSize, segments);
+        if (start >= end) break;
+
+        const t = (bIdx + 1) / batches;
+        const alpha = 0.07 + t * 0.83;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let i = start; i <= end; i++) {
+            const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
+            const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
+            const clamped = px >= -2 && px <= PLOT_W + 2 && py >= -2 && py <= PLOT_H + 2;
+            if (!clamped) { ctx.stroke(); ctx.beginPath(); continue; }
+            if (i === start || !clamped) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+    }
+}
+
+/** Draw a solid multi-series line chart (for energy). */
+function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
+    if (data.length < 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+        const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
+        const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
+        if (px < -5 || px > PLOT_W + 5) { ctx.stroke(); ctx.beginPath(); continue; }
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+}
+
+// --- Main plot renderers -----------------------------------------
+
+function renderPhasePortrait() {
+    const canvas = document.getElementById('plot-phase');
+    const ctx = canvas.getContext('2d');
+    setupPlotCanvas(canvas, ctx);
+    if (metricsData.length < 2) return;
+
+    // Plot first link's θ₁ vs ω₁
+    const X = metricsData.map(d => d.thetas[0]);
+    const Y = metricsData.map(d => d.omegas[0]);
+    const xRange = dataRange(X);
+    const yRange = dataRange(Y);
+
+    drawPlotGrid(ctx);
+    drawZeroAxes(ctx, xRange.min, xRange.max, yRange.min, yRange.max);
+    drawAxisLabels(ctx, 'θ₁', 'ω₁');
+    drawFadingLine(ctx, metricsData, xRange.min, xRange.max, yRange.min, yRange.max,
+        d => d.thetas[0], d => d.omegas[0], '#00d4ff');
+}
+
+function renderEnergyPlot() {
+    const canvas = document.getElementById('plot-energy');
+    const ctx = canvas.getContext('2d');
+    setupPlotCanvas(canvas, ctx);
+    if (metricsData.length < 2) return;
+
+    const data = metricsData;
+    const idx = data.map((_, i) => i);
+    const xRange = { min: 0, max: Math.max(data.length - 1, 1) };
+
+    // Collect all three series to find a shared Y range
+    const allVals = [];
+    data.forEach(d => { allVals.push(d.KE, d.PE, d.totalE); });
+    const yRange = dataRange(allVals);
+
+    drawPlotGrid(ctx);
+
+    // Draw each energy component
+    drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
+        (_, i) => i, d => d.KE, '#ff6060');
+    drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
+        (_, i) => i, d => d.PE, '#30ff88');
+    drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
+        (_, i) => i, d => d.totalE, '#ffffff');
+
+    // Label markers
+    ctx.font = '9px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = '#ff6060';
+    ctx.fillText('KE', 6, 14);
+    ctx.fillStyle = '#30ff88';
+    ctx.fillText('PE', 6, 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('E_total', 6, 38);
+}
+
+function toggleMetricsPanel() {
+    metricsVisible = !metricsVisible;
+    document.getElementById('metrics-panel').classList.toggle('show', metricsVisible);
+    if (!metricsVisible) {
+        // Clear data when hiding so it doesn't accumulate stale values
+        metricsData.length = 0;
+    }
 }
 
 // --- Controls ---------------------------------------------------
@@ -386,6 +646,7 @@ function resetSimulation() {
         if (pendulums.length > 1) pendulums.pop();
         chaosMode = false;
     }
+    clearMetrics();
     updateControls();
 }
 
@@ -468,6 +729,7 @@ document.getElementById('btn-slow').addEventListener('click', () => {
 
 document.getElementById('btn-save').addEventListener('click', saveArtwork);
 document.getElementById('btn-add').addEventListener('click', addPendulum);
+document.getElementById('btn-metrics').addEventListener('click', toggleMetricsPanel);
 
 document.getElementById('ctx-color').addEventListener('click', cycleColor);
 document.getElementById('ctx-visibility').addEventListener('click', toggleVisibility);
@@ -484,6 +746,8 @@ document.addEventListener('keydown', (e) => {
         resetSimulation();
     } else if (e.key === 'c' || e.key === 'C') {
         toggleChaos();
+    } else if (e.key === 'm' || e.key === 'M') {
+        toggleMetricsPanel();
     }
 });
 
@@ -821,6 +1085,10 @@ function animate() {
     if (!paused) stepPhysics();
     draw();
     updateAngleDisplay();
+    if (metricsVisible) {
+        renderPhasePortrait();
+        renderEnergyPlot();
+    }
     requestAnimationFrame(animate);
 }
 
