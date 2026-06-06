@@ -68,6 +68,7 @@ function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) 
         bob2X: 0, bob2Y: 0,
         color1, color2,
         trails: Array.from({ length: np }, () => []),
+        metrics: [],          // rolling buffer of physics snapshots for this pendulum
         visible: true,
         selected: false,
         _paletteIdx: 0,
@@ -136,7 +137,6 @@ let paletteIdx = 0;
 
 // Phase 8 — Metrics & Analysis state
 let metricsVisible = false;
-let metricsData = [];        // rolling buffer of {thetas, omegas, KE, PE, totalE}
 
 // Drag-to-set state
 let dragTarget = null;   // particle index being dragged
@@ -347,8 +347,8 @@ function stepPhysics() {
         }
     }
 
-    // Collect metrics for analysis (only if panel is or was visible)
-    if (metricsVisible || metricsData.length > 0) collectMetrics();
+    // Collect metrics for analysis (each pendulum stores its own buffer)
+    if (metricsVisible) collectMetrics();
 }
 
 // --- Phase 8 — Mathematical Analysis & Phase Plots ---------------
@@ -396,24 +396,35 @@ function computeEnergy(p) {
     return { KE, PE, totalE: KE + PE };
 }
 
-/** Collect metrics snapshot from the tracked pendulum. */
+/** Collect metrics snapshot from every visible pendulum. */
 function collectMetrics() {
-    const p = selectedPendulum !== null ? pendulums[selectedPendulum] : pendulums[0];
-    if (!p || !p.visible) return;
-    const e = computeEnergy(p);
-    metricsData.push({
-        thetas: p.thetas.slice(),
-        omegas: p.omegas.slice(),
-        KE: e.KE,
-        PE: e.PE,
-        totalE: e.totalE,
-    });
-    while (metricsData.length > METRICS_CAPACITY) metricsData.shift();
+    for (const p of pendulums) {
+        if (!p.visible) continue;
+        const e = computeEnergy(p);
+        p.metrics.push({
+            thetas: p.thetas.slice(),
+            omegas: p.omegas.slice(),
+            KE: e.KE,
+            PE: e.PE,
+            totalE: e.totalE,
+        });
+        while (p.metrics.length > METRICS_CAPACITY) p.metrics.shift();
+    }
 }
 
-/** Clear all collected metrics. */
+/** Return the pendulum whose data should be displayed in the plots. */
+function getTrackedPendulum() {
+    if (selectedPendulum !== null && pendulums[selectedPendulum]) {
+        return pendulums[selectedPendulum];
+    }
+    return pendulums[0];
+}
+
+/** Clear all collected metrics across every pendulum. */
 function clearMetrics() {
-    metricsData.length = 0;
+    for (const p of pendulums) {
+        p.metrics.length = 0;
+    }
 }
 
 // --- Plot rendering utilities ------------------------------------
@@ -541,32 +552,44 @@ function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
 // --- Main plot renderers -----------------------------------------
 
 function renderPhasePortrait() {
+    const p = getTrackedPendulum();
+    if (!p || p.metrics.length < 2) return;
+    const data = p.metrics;
+    const N = p.N;
+
     const canvas = document.getElementById('plot-phase');
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
-    if (metricsData.length < 2) return;
 
-    // Plot first link's θ₁ vs ω₁
-    const X = metricsData.map(d => d.thetas[0]);
-    const Y = metricsData.map(d => d.omegas[0]);
+    // Plot θ₁ vs ω₁ (first link's phase space — meaningful for any N)
+    const X = data.map(d => d.thetas[0]);
+    const Y = data.map(d => d.omegas[0]);
     const xRange = dataRange(X);
     const yRange = dataRange(Y);
 
     drawPlotGrid(ctx);
     drawZeroAxes(ctx, xRange.min, xRange.max, yRange.min, yRange.max);
+
+    // Update title to reflect pendulum identity
+    const idx = pendulums.indexOf(p);
+    const pid = idx >= 0 ? idx : 0;
+    document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
+        .textContent = `Phase Space — Pendulum ${pid}  θ₁ vs ω₁`;
+
     drawAxisLabels(ctx, 'θ₁', 'ω₁');
-    drawFadingLine(ctx, metricsData, xRange.min, xRange.max, yRange.min, yRange.max,
-        d => d.thetas[0], d => d.omegas[0], '#00d4ff');
+    drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
+        d => d.thetas[0], d => d.omegas[0], p.color2);
 }
 
 function renderEnergyPlot() {
+    const p = getTrackedPendulum();
+    if (!p || p.metrics.length < 2) return;
+    const data = p.metrics;
+
     const canvas = document.getElementById('plot-energy');
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
-    if (metricsData.length < 2) return;
 
-    const data = metricsData;
-    const idx = data.map((_, i) => i);
     const xRange = { min: 0, max: Math.max(data.length - 1, 1) };
 
     // Collect all three series to find a shared Y range
@@ -598,8 +621,7 @@ function toggleMetricsPanel() {
     metricsVisible = !metricsVisible;
     document.getElementById('metrics-panel').classList.toggle('show', metricsVisible);
     if (!metricsVisible) {
-        // Clear data when hiding so it doesn't accumulate stale values
-        metricsData.length = 0;
+        clearMetrics();
     }
 }
 

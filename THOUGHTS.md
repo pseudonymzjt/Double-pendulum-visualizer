@@ -583,3 +583,43 @@ The original implementation only bound the `M` key but had no visible hint.
 - ✅ No external libraries — all grids, lines, labels via native Canvas 2D API.
 - ✅ Panel hidden = no plot rendering; metrics cleared and collection stops.
 
+### Bug 5: Global metrics array — ignores multiple pendulums & N-link
+
+**Problem**: The metrics system used a single global `metricsData` array. 
+- With multiple pendulums, switching selection or spawning a new pendulum caused stale/wrong data to appear in the plots (the array belonged to whichever pendulum happened to be `selectedPendulum` at collection time).
+- The phase portrait title was hardcoded as `"Phase Space — θ₁ vs ω₁"` with no indication of which pendulum was being shown.
+
+**Root cause**: `metricsData` was a standalone array pushed to by `collectMetrics()`, which only tracked one pendulum per frame:
+
+```js
+// OLD — single global buffer, tracks only one pendulum
+let metricsData = [];
+function collectMetrics() {
+    const p = selectedPendulum ?? pendulums[0];
+    if (!p || !p.visible) return;
+    metricsData.push({ ... });  // ⟶ overwritten each frame for one pendulum
+}
+```
+
+**Fix**: Each pendulum owns its own `metrics[]` array, initialized in `createPendulum()`. `collectMetrics()` now iterates **all** visible pendulums:
+
+```js
+// NEW — per-pendulum buffers
+function collectMetrics() {
+    for (const p of pendulums) {
+        if (!p.visible) continue;
+        p.metrics.push({ thetas, omegas, KE, PE, totalE });
+        while (p.metrics.length > METRICS_CAPACITY) p.metrics.shift();
+    }
+}
+```
+
+A `getTrackedPendulum()` helper returns the selected pendulum (or `pendulums[0]`) for the plot renderers to consume. The phase portrait title updates dynamically each frame: `"Phase Space — Pendulum {id}  θ₁ vs ω₁"`.
+
+### Acceptance Criteria (updated)
+- ✅ Each pendulum accumulates its own 300-point metrics buffer independently.
+- ✅ Plots always display the **selected** pendulum's data; switching selection at runtime works seamlessly.
+- ✅ N-link (3, 4, 5+ balls): energy computation uses the general N-pendulum Lagrangian formulas (correct for any N), phase portrait shows θ₁ vs ω₁ of the tracked pendulum.
+- ✅ Deletion of a pendulum removes its metrics; tracked pendulum falls back to `pendulums[0]` gracefully.
+- ✅ Dynamic title updates with pendulum index each frame.
+
