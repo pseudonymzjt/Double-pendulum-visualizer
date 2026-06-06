@@ -478,11 +478,28 @@ This is solved directly (Cramer's rule) — **no small-angle approximations**, f
 
 ### N-link handling
 
-For N > 2, the extra intermediate particles are placed **proportionally along rod 2** (collinear with the θ₂ direction). This simplifies the physics to a true 2-link Lagrangian model while preserving the visual appearance of multi-joint chains. Adding/removing joints adjusts the constraints array and recalculates `l₂ = Σ(constraints[i].len for i ≥ 1)`.
+For N > 2, the initial implementation placed intermediate particles **proportionally along rod 2** (collinear with the θ₂ direction), with a 2×2 Lagrangian solver that only had 2 degrees of freedom. This caused the **3rd bob to be locked rigid to the 2nd bob** — they shared the same θ₂ with no independent bending at the joint. Reported as: *"the last two bobs are completely locked together and act like a single rigid body."*
+
+**Fix**: Replaced the hardcoded 2×2 solver with a general N-pendulum Lagrangian. The state stores arrays `thetas[]`, `omegas[]`, `ls[]`. `derivativesArray()` builds the N×N mass matrix:
+
+```
+Mᵢⱼ = lᵢ lⱼ (N−max(i,j)) cos(θᵢ−θⱼ)
+bᵢ  = −Σⱼ≠ᵢ Aᵢⱼ sin(θᵢ−θⱼ) ωⱼ² − g lᵢ (N−i) sin(θᵢ)
+```
+
+Solves `M·α = b` via Gaussian elimination with partial pivoting — works for any N. `computeParticlePositions` uses a simple forward loop: each link has its own independent angle. `dragParticle` sets `thetas[partIdx-1]`, correctly addressing the right link for any N.
+
+### Right-click bug
+
+Reported: *"when right-clicking on the screen, the bottom control icons (palette, plus button, etc.) disappear."*
+
+Root cause: `canvasB`'s `mousedown` handler had no `e.button` check. A right-click (button 2) on empty space triggered `selectPendulum(null)`, which hid the contextual menu.
+
+Fix: Added `if (e.button !== 0) return;` at the top of the handler so only left-click triggers selection/deselection. Also added `canvasB.addEventListener('contextmenu', (e) => e.preventDefault())` to suppress the browser's native right-click menu.
 
 ### Files changed
 
-- **script.js**: ~80 lines of physics replaced with ~90 lines of Lagrangian RK4. Particle model simplified (removed `px`/`py`). `dragParticle`, `resetSimulation`, `toggleChaos`, `resizeCanvas`, `addJoint`, `removeJoint` all updated for angle-based model.
+- **script.js**: ~80 lines of physics replaced with ~90 lines of Lagrangian RK4. Particle model simplified (removed `px`/`py`). `dragParticle`, `resetSimulation`, `toggleChaos`, `resizeCanvas`, `addJoint`, `removeJoint` all updated for angle-based model. Later expanded to general N×N solver (~170 lines). Right-click guard added.
 - **style.css**: No changes.
 - **index.html**: No changes.
 
