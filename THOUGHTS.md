@@ -412,3 +412,77 @@ The user wanted to see every pendulum's angles simultaneously, not just the sele
 - Hidden pendulums (`visible: false`) are skipped.
 - Pendulums with fewer than 2 particles are skipped.
 - Empty state: `pendulums.length === 0` clears the display.
+
+---
+
+# Stage 8 — Exact Lagrangian RK4 Physics Engine
+
+## Motivation
+
+The user reported: *"The double pendulum trajectory looks so regular and lacks chaotic movements, even at initial high angle."* — and asked specifically whether small-angle approximations or excessive damping were present.
+
+## Root Cause
+
+The Stage 7 Verlet + constraint-solver approach had **severe numerical damping**:
+
+1. **40 constraint corrections per frame**: 4 sub-steps × 10 constraint iterations = 40 position adjustments per frame, each applying 50/50 correction splits. This acts as implicit damping — the repeated corrections bleed kinetic energy each frame.
+
+2. **No non-linear coupling**: Verlet treats each particle independently (gravity + distance constraints). There are no terms encoding the Coriolis-like coupling between the two arms (`ω₁² sin(θ₁-θ₂)`, etc.). Without these terms, the sensitive dependence on initial conditions that drives chaos is absent.
+
+3. **Uniform 50/50 split**: The constraint solver distributes corrections evenly between both particles of each constraint. For a chain pendulum, this means the inner bob absorbs half the correction from BOTH adjacent constraints each iteration — effectively doubling its "friction."
+
+The result: the pendulum swung like a damped oscillator, settling into quasi-periodic motion rather than exhibiting true chaotic divergence.
+
+## Solution: Lagrangian Mechanics + RK4
+
+### Exact equations of motion
+
+The double pendulum Lagrangian (equal masses m at rod ends, lengths l₁, l₂, angles θ₁, θ₂ from downward vertical):
+
+```
+L = T - V
+  = ½m[2l₁²ω₁² + l₂²ω₂² + 2l₁l₂ω₁ω₂ cos(θ₁-θ₂)]
+    + mg[2l₁ cos θ₁ + l₂ cos θ₂]
+```
+
+Applying Euler-Lagrange yields a **2×2 linear system** for angular accelerations:
+
+```
+2 l₁ α₁  +  l₂ cos(Δ) α₂  =  -2g sin θ₁  -  l₂ ω₂² sin(Δ)
+ l₁ cos(Δ) α₁  +  l₂ α₂  =  -g sin θ₂   +  l₁ ω₁² sin(Δ)
+```
+
+where Δ = θ₁ − θ₂.
+
+This is solved directly (Cramer's rule) — **no small-angle approximations**, full trigonometric coupling preserved. Key terms:
+
+- `sin(Δ)` coupling amplifies divergence when arms are not aligned
+- `ω₁² l₁ sin(Δ)` and `ω₂² l₂ sin(Δ)` — Coriolis-like terms create the sensitive dependence
+- `cos²(Δ)` in denominator → non-linear resonance at certain arm configurations
+- Determinant = `l₁ l₂ (2 − cos²(Δ)) ≥ l₁ l₂ > 0` — never zero, no singularities
+
+### RK4 Integration
+
+4 sub-steps per frame (h = 1/240 s), integrating the 4-D state (θ₁, θ₂, ω₁, ω₂). The RK4 method's 4th-order accuracy preserves energy over time — no artificial damping from the integrator itself.
+
+### Architecture changes
+
+| Before (Verlet) | After (Lagrangian RK4) |
+|---|---|
+| `particles[]` with `{x, y, px, py}` (implicit velocity) | `particles[]` with `{x, y}` only |
+| `constraints[]` used for physics (distance solving) | `constraints[]` used for length storage only |
+| `verletStep()` — 40 constraint iterations/frame | `derivatives()` + `rk4Step()` — exact 2×2 solve |
+| `VERLET_G_SCALE = 8` to fake swing speed | `G = 9.81` used directly (correct physics) |
+| `CONSTRAINT_ITERS = 10` | Removed entirely |
+| N-link via independent particle chains | N-link via proportional interpolation along rod 2 |
+
+### N-link handling
+
+For N > 2, the extra intermediate particles are placed **proportionally along rod 2** (collinear with the θ₂ direction). This simplifies the physics to a true 2-link Lagrangian model while preserving the visual appearance of multi-joint chains. Adding/removing joints adjusts the constraints array and recalculates `l₂ = Σ(constraints[i].len for i ≥ 1)`.
+
+### Files changed
+
+- **script.js**: ~80 lines of physics replaced with ~90 lines of Lagrangian RK4. Particle model simplified (removed `px`/`py`). `dragParticle`, `resetSimulation`, `toggleChaos`, `resizeCanvas`, `addJoint`, `removeJoint` all updated for angle-based model.
+- **style.css**: No changes.
+- **index.html**: No changes.
+

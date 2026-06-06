@@ -1,13 +1,12 @@
 /* ============================================================
    Chaotic Art — Double Pendulum Visualizer
-   Stage 7 — N-Link Pendulum with Verlet Integration
+   Stage 8 — Exact Lagrangian RK4 Physics Engine
    ============================================================ */
 
 // --- Constants --------------------------------------------------
 const G = 9.81;                  // gravitational acceleration (m/s²)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
-const SUB_STEPS = 4;             // Verlet sub-steps per frame
-const CONSTRAINT_ITERS = 10;     // constraint solver iterations per sub-step
+const SUB_STEPS = 4;             // RK4 sub-steps per frame
 const TRAIL_LENGTH = 1200;       // max trail points (~20 s at 60 fps)
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians
@@ -16,7 +15,6 @@ const SNAP_THRESHOLD = 5;
 const LINK_SCALE = 0.85;         // length multiplier when adding joints
 const MIN_LINKS = 2;             // minimum links per pendulum
 const HIT_RADIUS = 22;           // px — bob grab radius
-const VERLET_G_SCALE = 8;        // gravity multiplier for Verlet (RK4-equivalent feel)
 
 function snapAngle(rad) {
     const deg = rad * 180 / Math.PI;
@@ -29,18 +27,18 @@ function snapAngle(rad) {
 const PIVOT = { x: 0, y: 0 };
 let pxPerUnit = 0;               // pixels per simulation-unit-length
 
-/** Build initial particles + constraints for an N-link pendulum. */
+/** Build initial particles + link-lengths for an N-link pendulum. */
 function buildChain(nLinks, thetaDeg) {
     const th = thetaDeg * Math.PI / 180;
     const baseLen = PHYS_L * pxPerUnit;
-    const particles = [{ x: PIVOT.x, y: PIVOT.y, px: PIVOT.x, py: PIVOT.y }];
-    const constraints = [];
+    const particles = [{ x: PIVOT.x, y: PIVOT.y }];
+    const constraints = [];   // kept for length storage only
     let cx = PIVOT.x, cy = PIVOT.y;
     for (let i = 0; i < nLinks; i++) {
         const len = baseLen * Math.pow(LINK_SCALE, i);
         const nx = cx + len * Math.sin(th);
         const ny = cy + len * Math.cos(th);
-        particles.push({ x: nx, y: ny, px: cx, py: cy });
+        particles.push({ x: nx, y: ny });
         constraints.push({ a: i, b: i + 1, len });
         cx = nx; cy = ny;
     }
@@ -48,18 +46,28 @@ function buildChain(nLinks, thetaDeg) {
 }
 
 // --- Pendulum state ---------------------------------------------
+
+/** Compute l₁ and l₂ (px) from constraints array. */
+function computeRodLengths(constraints) {
+    const l1 = constraints.length > 0 ? constraints[0].len : 0;
+    let l2 = 0;
+    for (let i = 1; i < constraints.length; i++) l2 += constraints[i].len;
+    return [l1, l2];
+}
+
 function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) {
     const chain = buildChain(nLinks, theta1Deg);
-    // For theta2 we build a second chain that shares the first particle
-    // (the pivot) — not needed for our angle-based model. Instead each
-    // pendulum has one chain whose first joint-angle is θ₁; sub-sequent
-    // links are all at θ₂ (or the same angle) for the classic double‑pendulum
-    // starting shape.  The Verlet solver handles the rest.
     const np = chain.particles.length;
+    const [l1, l2] = computeRodLengths(chain.constraints);
+    const th1 = theta1Deg * Math.PI / 180;
+    const th2 = theta2Deg * Math.PI / 180;
     const p = {
+        theta1: th1, theta2: th2,  // angles (rad, 0 = straight down)
+        omega1: 0, omega2: 0,      // angular velocities (rad/s)
+        l1, l2,                     // rod lengths in px
         particles: chain.particles,
         constraints: chain.constraints,
-        bob1X: 0, bob1Y: 0,        // recomputed every frame
+        bob1X: 0, bob1Y: 0,
         bob2X: 0, bob2Y: 0,
         color1, color2,
         trails: Array.from({ length: np }, () => []),
@@ -67,8 +75,9 @@ function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) 
         selected: false,
         _paletteIdx: 0,
     };
+    computeParticlePositions(p);
+    syncBobPositions(p);
     if (copyFrom) {
-        // Inherit all trails so divergence point is visible
         for (let i = 1; i < np && i < copyFrom.trails.length; i++) {
             p.trails[i] = copyFrom.trails[i].map(pt => ({ ...pt }));
         }
@@ -76,11 +85,52 @@ function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) 
     return p;
 }
 
-/** Rebuild particles from current pivot + angles (used on drag/reset). */
+/** Rebuild particles + constraints for a given angle on resize/reset. */
 function rebuildChain(p, nLinks, thetaDeg) {
     const chain = buildChain(nLinks, thetaDeg);
     p.particles = chain.particles;
     p.constraints = chain.constraints;
+    const [l1, l2] = computeRodLengths(chain.constraints);
+    p.l1 = l1;
+    p.l2 = l2;
+    p.theta2 = p.theta1;  // collinear initially
+}
+
+/** Convert angles → pixel positions for all particles. */
+function computeParticlePositions(p) {
+    p.particles[0].x = PIVOT.x;
+    p.particles[0].y = PIVOT.y;
+
+    // First bob: at end of rod 1
+    const x1 = PIVOT.x + p.l1 * Math.sin(p.theta1);
+    const y1 = PIVOT.y + p.l1 * Math.cos(p.theta1);
+    p.particles[1].x = x1;
+    p.particles[1].y = y1;
+
+    // For N=2: tip is at end of rod 2
+    // For N>2: intermediate particles placed proportionally along rod 2
+    if (p.constraints.length <= 2) {
+        // Simple 2-link case
+        const xTip = x1 + p.l2 * Math.sin(p.theta2);
+        const yTip = y1 + p.l2 * Math.cos(p.theta2);
+        if (p.particles.length > 2) {
+            p.particles[2].x = xTip;
+            p.particles[2].y = yTip;
+        }
+    } else {
+        // N-link: intermediate particles placed proportionally along rod 2
+        let cumLen = 0;
+        for (let i = 2; i <= p.constraints.length && i < p.particles.length; i++) {
+            cumLen += p.constraints[i - 1].len;
+            const t = cumLen / p.l2;
+            p.particles[i].x = x1 + p.l2 * Math.sin(p.theta2) * t;
+            p.particles[i].y = y1 + p.l2 * Math.cos(p.theta2) * t;
+        }
+        // Tip at full rod 2 extent
+        const last = p.particles.length - 1;
+        p.particles[last].x = x1 + p.l2 * Math.sin(p.theta2);
+        p.particles[last].y = y1 + p.l2 * Math.cos(p.theta2);
+    }
 }
 
 /** Sync backward‑compat bob positions from particles. */
@@ -148,13 +198,14 @@ function resizeCanvas() {
     for (const p of pendulums) {
         const n = p.constraints.length;
         if (n < 1) continue;
-        // Extract current angle from first segment
-        const dx = p.particles[1].x - p.particles[0].x;
-        const dy = p.particles[1].y - p.particles[0].y;
-        const angleDeg = Math.atan2(dx, dy) * 180 / Math.PI;
-        const chain = buildChain(n, angleDeg);
+        // Preserve current angles, just rescale lengths
+        const chain = buildChain(n, p.theta1 * 180 / Math.PI);
         p.particles = chain.particles;
         p.constraints = chain.constraints;
+        const [l1, l2] = computeRodLengths(chain.constraints);
+        p.l1 = l1;
+        p.l2 = l2;
+        computeParticlePositions(p);
         syncBobPositions(p);
     }
     clearTrails();
@@ -162,58 +213,96 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 
-// --- Verlet Physics ---------------------------------------------
+// --- Lagrangian Physics ------------------------------------------
 
-function verletStep(p, dt) {
-    const h = dt / SUB_STEPS;
-    const gravPx = G * pxPerUnit * VERLET_G_SCALE;  // px/s²
+/**
+ * Compute angular accelerations α₁, α₂ using exact non-linear
+ * Lagrangian-derived equations of motion for a double pendulum.
+ *
+ * m₁ = m₂ = m (equal masses at rod ends).
+ * The 2×2 linear system solved directly — no small-angle approximation.
+ */
+function derivatives(theta1, theta2, omega1, omega2, l1, l2) {
+    const dTheta = theta1 - theta2;
+    const cosD = Math.cos(dTheta);
+    const sinD = Math.sin(dTheta);
 
-    for (let s = 0; s < SUB_STEPS; s++) {
-        // 1. Integrate all free particles (skip index 0 = pivot)
-        for (let i = 1; i < p.particles.length; i++) {
-            const pt = p.particles[i];
-            const vx = pt.x - pt.px;
-            const vy = pt.y - pt.py;
-            pt.px = pt.x;
-            pt.py = pt.y;
-            pt.x += vx;
-            pt.y += vy + gravPx * h * h;
-        }
+    // System:  2·l₁·α₁ + l₂·cos(Δ)·α₂ = -2g·sin θ₁ - l₂·ω₂²·sin(Δ)
+    //           l₁·cos(Δ)·α₁ + l₂·α₂ = -g·sin θ₂ + l₁·ω₁²·sin(Δ)
+    // All lengths are in px, g is in px/s².
+    const gPx = G * pxPerUnit;
+    const a11 = 2 * l1;
+    const a12 = l2 * cosD;
+    const a21 = l1 * cosD;
+    const a22 = l2;
 
-        // 2. Satisfy constraints (multiple iterations for chain stability)
-        const iters = Math.max(CONSTRAINT_ITERS, p.constraints.length * 2);
-        for (let iter = 0; iter < iters; iter++) {
-            for (const c of p.constraints) {
-                const a = p.particles[c.a];
-                const b = p.particles[c.b];
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const dist = Math.hypot(dx, dy);
-                if (dist < 0.001) continue;
-                const diff = (c.len - dist) / dist;
-                const cx = dx * 0.5 * diff;
-                const cy = dy * 0.5 * diff;
-                if (c.a !== 0) { a.x -= cx; a.y -= cy; }
-                b.x += cx; b.y += cy;
-            }
-        }
+    const b1 = -2 * gPx * Math.sin(theta1) - l2 * omega2 * omega2 * sinD;
+    const b2 = l1 * omega1 * omega1 * sinD - gPx * Math.sin(theta2);
 
-        // 3. Pin pivot
-        p.particles[0].x = PIVOT.x;
-        p.particles[0].y = PIVOT.y;
-        p.particles[0].px = PIVOT.x;
-        p.particles[0].py = PIVOT.y;
-    }
+    const det = a11 * a22 - a12 * a21;
+    // det = 2·l₁·l₂ − l₁·l₂·cos²(Δ) = l₁·l₂·(2 − cos²(Δ)) ≥ l₁·l₂ > 0
+
+    const alpha1 = (b1 * a22 - a12 * b2) / det;
+    const alpha2 = (a11 * b2 - b1 * a21) / det;
+
+    return [alpha1, alpha2];
 }
 
-// --- Physics step -----------------------------------------------
+/** RK4 integration of the 4-D state (θ₁, θ₂, ω₁, ω₂). */
+function rk4Step(p, dt) {
+    const h = dt / SUB_STEPS;
+
+    for (let s = 0; s < SUB_STEPS; s++) {
+        const t1 = p.theta1, t2 = p.theta2;
+        const o1 = p.omega1, o2 = p.omega2;
+
+        // k1
+        const [a1_1, a2_1] = derivatives(t1, t2, o1, o2, p.l1, p.l2);
+        const k1_t1 = h * o1,  k1_t2 = h * o2;
+        const k1_o1 = h * a1_1, k1_o2 = h * a2_1;
+
+        // k2 (half-step)
+        const [a1_2, a2_2] = derivatives(
+            t1 + k1_t1 / 2, t2 + k1_t2 / 2,
+            o1 + k1_o1 / 2, o2 + k1_o2 / 2,
+            p.l1, p.l2);
+        const k2_t1 = h * (o1 + k1_o1 / 2), k2_t2 = h * (o2 + k1_o2 / 2);
+        const k2_o1 = h * a1_2, k2_o2 = h * a2_2;
+
+        // k3
+        const [a1_3, a2_3] = derivatives(
+            t1 + k2_t1 / 2, t2 + k2_t2 / 2,
+            o1 + k2_o1 / 2, o2 + k2_o2 / 2,
+            p.l1, p.l2);
+        const k3_t1 = h * (o1 + k2_o1 / 2), k3_t2 = h * (o2 + k2_o2 / 2);
+        const k3_o1 = h * a1_3, k3_o2 = h * a2_3;
+
+        // k4 (full step)
+        const [a1_4, a2_4] = derivatives(
+            t1 + k3_t1, t2 + k3_t2,
+            o1 + k3_o1, o2 + k3_o2,
+            p.l1, p.l2);
+        const k4_t1 = h * (o1 + k3_o1), k4_t2 = h * (o2 + k3_o2);
+        const k4_o1 = h * a1_4, k4_o2 = h * a2_4;
+
+        p.theta1 += (k1_t1 + 2 * k2_t1 + 2 * k3_t1 + k4_t1) / 6;
+        p.theta2 += (k1_t2 + 2 * k2_t2 + 2 * k3_t2 + k4_t2) / 6;
+        p.omega1 += (k1_o1 + 2 * k2_o1 + 2 * k3_o1 + k4_o1) / 6;
+        p.omega2 += (k1_o2 + 2 * k2_o2 + 2 * k3_o2 + k4_o2) / 6;
+    }
+}
 
 function stepPhysics() {
     const dt = slowMo ? 1 / 120 : 1 / 60;
 
     for (const p of pendulums) {
         if (!p.visible) continue;
-        verletStep(p, dt);
+
+        // Exact Lagrangian RK4 integration
+        rk4Step(p, dt);
+
+        // Convert angles → pixel positions
+        computeParticlePositions(p);
         syncBobPositions(p);
 
         // Record trails for all particles (inner = shorter limit, tip = full)
@@ -242,13 +331,17 @@ function toggleChaos() {
     } else {
         const a = pendulums[0];
         const n = a.constraints.length;
+        // Copy A's angles + tiny offset for butterfly-effect divergence
         const b = createPendulum(n, DEFAULT_ANGLE_DEG, DEFAULT_ANGLE_DEG, C_B.c1, C_B.c2, a);
-        // Tiny perpendicular offset on the tip for chaos divergence
-        const tip = b.particles.length - 1;
-        b.particles[tip].x += 0.3;
-        b.particles[tip].px += 0.3;
-        pendulums.push(b);
+        b.theta1 = a.theta1;
+        b.theta2 = a.theta2;
+        b.omega1 = a.omega1;
+        b.omega2 = a.omega2;
+        // Apply CHAOS_OFFSET to θ₁ for divergence
+        b.theta1 += CHAOS_OFFSET;
+        computeParticlePositions(b);
         syncBobPositions(b);
+        pendulums.push(b);
         chaosMode = true;
     }
     updateControls();
@@ -257,7 +350,13 @@ function toggleChaos() {
 function resetSimulation() {
     for (const p of pendulums) {
         const n = p.constraints.length;
+        const rad = DEFAULT_ANGLE_DEG * Math.PI / 180;
+        p.theta1 = rad;
+        p.theta2 = rad;
+        p.omega1 = 0;
+        p.omega2 = 0;
         rebuildChain(p, n, DEFAULT_ANGLE_DEG);
+        computeParticlePositions(p);
         syncBobPositions(p);
         for (const t of p.trails) t.length = 0;
     }
@@ -296,15 +395,11 @@ function updateAngleDisplay() {
     const lines = [];
     for (let idx = 0; idx < pendulums.length; idx++) {
         const p = pendulums[idx];
-        if (!p.visible || p.particles.length < 2) continue;
+        if (!p.visible) continue;
 
-        const parts = [];
-        for (let i = 1; i < p.particles.length; i++) {
-            const dx = p.particles[i].x - p.particles[i - 1].x;
-            const dy = p.particles[i].y - p.particles[i - 1].y;
-            const deg = Math.atan2(dx, dy) * 180 / Math.PI;
-            parts.push(`θ${String.fromCharCode(0x2080 + i)} ${deg.toFixed(1)}°`);
-        }
+        const deg1 = p.theta1 * 180 / Math.PI;
+        const deg2 = p.theta2 * 180 / Math.PI;
+        const parts = [`θ₁ ${deg1.toFixed(1)}°`, `θ₂ ${deg2.toFixed(1)}°`];
         const marker = idx === selectedPendulum ? '▸' : '●';
         lines.push(`<span style="color:${p.color2}">${marker}</span> ${parts.join('  ')}`);
     }
@@ -424,20 +519,23 @@ function toggleVisibility() {
 function addJoint() {
     if (selectedPendulum === null) return;
     const p = pendulums[selectedPendulum];
-    const last = p.particles.length - 1;
+    const last = p.constraints.length;  // = old particle count - 1
     const tip = p.particles[last];
-    const dirX = tip.x - p.particles[last - 1].x;
-    const dirY = tip.y - p.particles[last - 1].y;
+    const prev = p.particles[last - 1];
+    const dirX = tip.x - prev.x;
+    const dirY = tip.y - prev.y;
     const dist = Math.hypot(dirX, dirY) || 1;
     const newLen = p.constraints[p.constraints.length - 1].len * LINK_SCALE;
     p.particles.push({
         x: tip.x + (dirX / dist) * newLen,
         y: tip.y + (dirY / dist) * newLen,
-        px: tip.x,
-        py: tip.y,
     });
     p.constraints.push({ a: last, b: last + 1, len: newLen });
-    p.trails.push([]);   // new trail for the new particle
+    p.trails.push([]);
+    // Recalculate l₁, l₂
+    const [l1, l2] = computeRodLengths(p.constraints);
+    p.l1 = l1; p.l2 = l2;
+    computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
 }
@@ -448,7 +546,10 @@ function removeJoint() {
     if (p.constraints.length <= MIN_LINKS) return;
     p.particles.pop();
     p.constraints.pop();
-    p.trails.pop();      // remove the removed particle's trail
+    p.trails.pop();
+    const [l1, l2] = computeRodLengths(p.constraints);
+    p.l1 = l1; p.l2 = l2;
+    computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
 }
@@ -474,53 +575,27 @@ function hitTestBob(mx, my) {
 function dragParticle(p, partIdx, mx, my) {
     if (partIdx === 0) return;
 
-    // 1. Constrain dragged particle to a circle centered at its parent,
-    //    so the parent stays fixed and only this segment's angle changes.
+    // Compute the angle from parent particle to mouse.
     const parent = p.particles[partIdx - 1];
-    const rodLen = p.constraints[partIdx - 1].len;
     const dx = mx - parent.x;
     const dy = my - parent.y;
-    const dist = Math.hypot(dx, dy);
+    const rawAngle = Math.atan2(dx, dy);
+    const newAngle = snapAngle(rawAngle);
 
-    let targetX, targetY;
-    if (dist > 0.001) {
-        const rawAngle = Math.atan2(dx, dy);      // radians, θ=0 = down
-        const snappedRad = snapAngle(rawAngle);
-        targetX = parent.x + rodLen * Math.sin(snappedRad);
-        targetY = parent.y + rodLen * Math.cos(snappedRad);
+    if (partIdx === 1) {
+        // Dragging bob1 → set θ₁. Inner fixed point is pivot.
+        p.theta1 = newAngle;
     } else {
-        targetX = parent.x;
-        targetY = parent.y + rodLen;
-    }
-    p.particles[partIdx].x = targetX;
-    p.particles[partIdx].y = targetY;
-    p.particles[partIdx].px = targetX;
-    p.particles[partIdx].py = targetY;
-
-    // 2. Propagate forward from drag point toward tip so
-    //    all downstream links maintain their lengths.
-    for (let i = partIdx; i < p.constraints.length; i++) {
-        const c = p.constraints[i];
-        const a = p.particles[c.a];
-        const b = p.particles[c.b];
-        const fdx = b.x - a.x;
-        const fdy = b.y - a.y;
-        const fdist = Math.hypot(fdx, fdy);
-        let bx, by;
-        if (fdist > 0.001) {
-            const scale = c.len / fdist;
-            bx = a.x + fdx * scale;
-            by = a.y + fdy * scale;
-        } else {
-            bx = a.x;
-            by = a.y + c.len;
-        }
-        b.x = bx;
-        b.y = by;
-        b.px = bx;
-        b.py = by;
+        // Dragging tip or intermediate particle → set θ₂ (rod-2 angle).
+        p.theta2 = newAngle;
     }
 
+    // Zero velocities during drag
+    p.omega1 = 0;
+    p.omega2 = 0;
+
+    // Convert angles → pixel positions
+    computeParticlePositions(p);
     syncBobPositions(p);
 }
 
