@@ -204,6 +204,10 @@ html, body {
     cursor: pointer;
     opacity: 0.5;
     transition: opacity 0.15s;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 #ctx-menu button:hover {

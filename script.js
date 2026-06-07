@@ -947,8 +947,11 @@ function updateControls() {
     updateAngleDisplay();
     if (hasSel) {
         const p = pendulums[selectedPendulum];
-        document.getElementById('ctx-color').textContent = '🎨';
-        document.getElementById('ctx-visibility').textContent = p.visible ? '◉' : '◌';
+        // ctx-color SVG is in the HTML — no dynamic change needed
+        // ctx-visibility swaps between eye-open and eye-off SVGs
+        const EYE_ON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        const EYE_OFF = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg>';
+        document.getElementById('ctx-visibility').innerHTML = p.visible ? EYE_ON : EYE_OFF;
         const n = p.constraints.length;
         document.getElementById('ctx-add-joint').style.display = '';
         document.getElementById('ctx-rm-joint').style.display = n > MIN_LINKS ? '' : 'none';
