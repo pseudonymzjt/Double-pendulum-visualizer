@@ -711,7 +711,7 @@ function renderPhasePortrait() {
     const idx = pendulums.indexOf(p || pendulums[0]);
     const pid = idx >= 0 ? idx : 0;
     document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
-        .textContent = `Phase Space — Pendulum ${pid}  θ vs ω    [ ] cycle`;
+        .textContent = `Phase Space — Pendulum ${pid}  θ vs ω     cycle`;
 
     if (!p || p.metrics.length < 2) return;
     const data = p.metrics;
