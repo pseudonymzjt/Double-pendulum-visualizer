@@ -899,3 +899,17 @@ The app was designed on a large desktop monitor. On phones:
 - ✅ UI usable on 375px-wide phone screens without overlap.
 - ✅ Params panel togglable via gear icon on mobile; always visible on desktop.
 - ✅ Canvas and rod lengths scale proportionally to viewport (existing `pxPerUnit` system).
+
+### Bug fix: Blank canvas at startup after slowMo removal
+
+After removing the `slowMo` variable and `btn-slow` button, the pendulum appeared invisible on the initial page load — the canvas showed only the dark background.
+
+**Root cause**: Two independent issues:
+
+1. **Missing synchronous initial paint**: The bootstrap sequence was `addPendulum()` → `resizeCanvas()` → `updateControls()` → `animate()`. The `animate()` function only queues the first frame via `requestAnimationFrame(animate)`, which fires ~16ms later at the next VSync. During that gap, the canvases were transparent (unpainted), showing only the body's `#0a0a0f` background.
+
+2. **Unsafe `matchMedia` usage**: `window.matchMedia("(max-width: 768px)").matches` was called without a guard. If `matchMedia` were unavailable or threw, the entire top-level script would halt at that line — nothing after it would execute.
+
+**Fix**:
+- Added a null guard: `window.matchMedia ? window.matchMedia(...).matches : false`.
+- Added synchronous `draw()` and `updateAngleDisplay()` calls in the bootstrap before `animate()` — the pendulum renders on the very first layout frame instead of waiting for the first rAF callback.
