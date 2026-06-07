@@ -22,6 +22,20 @@ const HIT_RADIUS = 22;           // px — bob grab radius
 const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
 let globalMetricsStep = 0;       // monotonically increasing step counter for X-axis
 
+/** Tiny $() helper — returns element or null. */
+function $(id) { return document.getElementById(id); }
+
+/**
+ * Dual-purpose helper:
+ *   on('id')              — returns the element (like $())
+ *   on('id', 'evt', fn)   — safely binds event listener, skips if element missing
+ */
+function on(id, event, handler) {
+    const el = $(id);
+    if (arguments.length === 1) return el;
+    if (el) el.addEventListener(event, handler);
+}
+
 function snapAngle(rad) {
     const deg = rad * 180 / Math.PI;
     const snapped = Math.round(deg / SNAP_DEG) * SNAP_DEG;
@@ -161,8 +175,8 @@ const C_A = PALETTE[0];
 const C_B = PALETTE[1];
 
 // --- Canvas (HiDPI) — dual layer ---------------------------------
-const canvasA = document.getElementById('canvas-a');
-const canvasB = document.getElementById('canvas-b');
+const canvasA = on('canvas-a');
+const canvasB = on('canvas-b');
 const ctxA = canvasA.getContext('2d');
 const ctxB = canvasB.getContext('2d');
 let cw = 0, ch = 0;
@@ -703,7 +717,7 @@ function renderPhasePortrait() {
     const data = p.metrics;
     const N = p.N;
 
-    const canvas = document.getElementById('plot-phase');
+    const canvas = on('plot-phase');
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
 
@@ -753,7 +767,7 @@ function renderEnergyPlot() {
     const first = data[0];
     const last = data[data.length - 1];
 
-    const canvas = document.getElementById('plot-energy');
+    const canvas = on('plot-energy');
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
 
@@ -810,7 +824,7 @@ function renderEnergyPlot() {
 
 function toggleMetricsPanel() {
     metricsVisible = !metricsVisible;
-    document.getElementById('metrics-panel').classList.toggle('show', metricsVisible);
+    on('metrics-panel').classList.toggle('show', metricsVisible);
     zoomedPlotId = null;  // reset zoom on toggle
     if (!metricsVisible) {
         clearMetrics();
@@ -819,7 +833,7 @@ function toggleMetricsPanel() {
 
 /** Toggle the settings (params) panel — used on mobile where it starts hidden. */
 function toggleSettingsPanel() {
-    document.getElementById('params-panel').classList.toggle('show');
+    on('params-panel').classList.toggle('show');
 }
 
 /** Click a plot to zoom it full-screen; click again to shrink back. */
@@ -829,7 +843,7 @@ function togglePlotZoom(plotId) {
     } else {
         zoomedPlotId = plotId;
     }
-    const panel = document.getElementById('metrics-panel');
+    const panel = on('metrics-panel');
     panel.classList.toggle('zoom-phase', zoomedPlotId === 'phase');
     panel.classList.toggle('zoom-energy', zoomedPlotId === 'energy');
 }
@@ -902,7 +916,7 @@ function saveArtwork() {
 }
 
 function updateAngleDisplay() {
-    const el = document.getElementById('angle-display');
+    const el = on('angle-display');
     if (pendulums.length === 0) { el.innerHTML = ''; return; }
 
     let html = '';
@@ -930,7 +944,7 @@ function updateAngleDisplay() {
 document.addEventListener('pointerdown', (e) => {
     const entry = e.target.closest('.pend-entry');
     if (!entry) return;
-    if (!document.getElementById('angle-display').contains(entry)) return;
+    if (!on('angle-display').contains(entry)) return;
     const idx = parseInt(entry.dataset.idx, 10);
     if (isNaN(idx) || !pendulums[idx]) return;
     selectPendulum(idx);
@@ -944,10 +958,10 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 function updateControls() {
-    document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
-    document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
+    on('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
+    on('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
     const hasSel = selectedPendulum !== null && pendulums[selectedPendulum];
-    document.getElementById('ctx-menu').classList.toggle('show', !!hasSel);
+    on('ctx-menu').classList.toggle('show', !!hasSel);
     updateAngleDisplay();
     if (hasSel) {
         const p = pendulums[selectedPendulum];
@@ -955,66 +969,66 @@ function updateControls() {
         // ctx-visibility swaps between eye-open and eye-off SVGs
         const EYE_ON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
         const EYE_OFF = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg>';
-        document.getElementById('ctx-visibility').innerHTML = p.visible ? EYE_ON : EYE_OFF;
+        on('ctx-visibility').innerHTML = p.visible ? EYE_ON : EYE_OFF;
         const n = p.constraints.length;
-        document.getElementById('ctx-add-joint').style.display = '';
-        document.getElementById('ctx-rm-joint').style.display = n > MIN_LINKS ? '' : 'none';
+        on('ctx-add-joint').style.display = '';
+        on('ctx-rm-joint').style.display = n > MIN_LINKS ? '' : 'none';
     } else {
-        document.getElementById('ctx-add-joint').style.display = 'none';
-        document.getElementById('ctx-rm-joint').style.display = 'none';
+        on('ctx-add-joint').style.display = 'none';
+        on('ctx-rm-joint').style.display = 'none';
     }
 }
 
 // --- Button handlers --------------------------------------------
 
-document.getElementById('btn-play').addEventListener('click', () => {
+on('btn-play', 'click', () => {
     paused = !paused;
     updateControls();
 });
 
-document.getElementById('btn-reset').addEventListener('click', resetSimulation);
-document.getElementById('btn-chaos').addEventListener('click', toggleChaos);
-document.getElementById('btn-clear').addEventListener('click', clearTrails);
+on('btn-reset', 'click', resetSimulation);
+on('btn-chaos', 'click', toggleChaos);
+on('btn-clear', 'click', clearTrails);
 
-document.getElementById('btn-save').addEventListener('click', saveArtwork);
+on('btn-save', 'click', saveArtwork);
 
 // --- Parameter sliders ---
 
-document.getElementById('param-gravity').addEventListener('input', (e) => {
+on('param-gravity', 'input', (e) => {
     G = parseFloat(e.target.value);
-    document.getElementById('grav-value').textContent = G.toFixed(1);
+    on('grav-value').textContent = G.toFixed(1);
 });
 
-document.getElementById('param-damping').addEventListener('input', (e) => {
+on('param-damping', 'input', (e) => {
     DAMPING = parseFloat(e.target.value);
-    document.getElementById('damp-value').textContent = DAMPING.toFixed(4);
+    on('damp-value').textContent = DAMPING.toFixed(4);
 });
 
-document.getElementById('param-speed').addEventListener('input', (e) => {
+on('param-speed', 'input', (e) => {
     speedMultiplier = parseFloat(e.target.value);
-    document.getElementById('speed-value').textContent = speedMultiplier.toFixed(1) + '×';
+    on('speed-value').textContent = speedMultiplier.toFixed(1) + '×';
 });
-document.getElementById('btn-add').addEventListener('click', addPendulum);
-document.getElementById('btn-metrics').addEventListener('click', toggleMetricsPanel);
-document.getElementById('btn-gear').addEventListener('click', toggleSettingsPanel);
+on('btn-add', 'click', addPendulum);
+on('btn-metrics', 'click', toggleMetricsPanel);
+on('btn-gear', 'click', toggleSettingsPanel);
 
 // Click-to-zoom on plot canvases (only when panel is visible)
-document.getElementById('plot-phase').addEventListener('click', (e) => {
+on('plot-phase', 'click', (e) => {
     if (!metricsVisible) return;
     e.stopPropagation();
     togglePlotZoom('phase');
 });
-document.getElementById('plot-energy').addEventListener('click', (e) => {
+on('plot-energy', 'click', (e) => {
     if (!metricsVisible) return;
     e.stopPropagation();
     togglePlotZoom('energy');
 });
 
-document.getElementById('ctx-color').addEventListener('click', cycleColor);
-document.getElementById('ctx-visibility').addEventListener('click', toggleVisibility);
-document.getElementById('ctx-delete').addEventListener('click', deleteSelected);
-document.getElementById('ctx-add-joint').addEventListener('click', addJoint);
-document.getElementById('ctx-rm-joint').addEventListener('click', removeJoint);
+on('ctx-color', 'click', cycleColor);
+on('ctx-visibility', 'click', toggleVisibility);
+on('ctx-delete', 'click', deleteSelected);
+on('ctx-add-joint', 'click', addJoint);
+on('ctx-rm-joint', 'click', removeJoint);
 
 document.addEventListener('keydown', (e) => {
     if (e.key === ' ' || e.key === 'Spacebar') {
