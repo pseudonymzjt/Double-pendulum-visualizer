@@ -913,3 +913,23 @@ After removing the `slowMo` variable and `btn-slow` button, the pendulum appeare
 **Fix**:
 - Added a null guard: `window.matchMedia ? window.matchMedia(...).matches : false`.
 - Added synchronous `draw()` and `updateAngleDisplay()` calls in the bootstrap before `animate()` — the pendulum renders on the very first layout frame instead of waiting for the first rAF callback.
+
+### Bug fix: "Cannot read properties of null (reading 'addEventListener')" on GitHub Pages
+
+After deploying to GitHub Pages, the script crashed at boot with `TypeError: Cannot read properties of null (reading 'addEventListener')` at one of the `document.getElementById(...).addEventListener(...)` lines. This caused the entire animation loop to never start — no pendulum, no controls, a blank dark page.
+
+**Root cause**: Two problems compounded:
+
+1. **Timing — script ran before DOM was fully loaded.** The `<script>` tag had no `defer` attribute, so the browser executed it as soon as it was encountered during HTML parsing. If the network delivered the HTML in chunks, the script element might execute before later DOM nodes were parsed. On localhost (file:// or live server) the HTML arrives instantly, so this was never a problem. On GitHub Pages (CDN-served, chunked), the timing window opens.
+
+2. **Missing element — an ID mismatch.** One of the `document.getElementById()` calls returned `null` because the element with that ID didn't exist at execution time (either not yet parsed, or the ID was renamed in HTML but not in JS). Calling `.addEventListener()` on `null` throws a TypeError that propagates out of the top-level script, halting all subsequent code.
+
+**Fix**:
+
+- Added `defer` to the `<script>` tag so the browser always waits until the full HTML is parsed before executing the JS.
+- Added a `$()` helper (`document.getElementById` alias) for brevity.
+- Added an `on(id, event, handler)` dual-purpose function:
+  - `on(id)` — returns the element (like `$()`) for direct access.
+  - `on(id, event, handler)` — safely binds an event listener. If `$(id)` returns `null`, the listener is silently skipped.
+- Converted all 18 `document.getElementById(id).addEventListener(event, handler)` calls to `on(id, event, handler)`.
+- Left `window`, `document`, and `canvasB` listeners unchanged (these DOM nodes always exist).
