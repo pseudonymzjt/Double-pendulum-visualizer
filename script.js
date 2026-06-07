@@ -16,6 +16,7 @@ const LINK_SCALE = 0.85;         // length multiplier when adding joints
 const MIN_LINKS = 2;             // minimum links per pendulum
 const HIT_RADIUS = 22;           // px — bob grab radius
 const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
+let globalMetricsStep = 0;       // monotonically increasing step counter for X-axis
 
 function snapAngle(rad) {
     const deg = rad * 180 / Math.PI;
@@ -407,9 +408,11 @@ function collectMetrics() {
             KE: e.KE,
             PE: e.PE,
             totalE: e.totalE,
+            step: globalMetricsStep,
         });
         while (p.metrics.length > METRICS_CAPACITY) p.metrics.shift();
     }
+    globalMetricsStep++;
 }
 
 /** Return the pendulum whose data should be displayed in the plots. */
@@ -425,6 +428,7 @@ function clearMetrics() {
     for (const p of pendulums) {
         p.metrics.length = 0;
     }
+    globalMetricsStep = 0;
 }
 
 // --- Plot rendering utilities ------------------------------------
@@ -732,12 +736,17 @@ function renderEnergyPlot() {
     const p = getTrackedPendulum();
     if (!p || p.metrics.length < 2) return;
     const data = p.metrics;
+    const first = data[0];
+    const last = data[data.length - 1];
 
     const canvas = document.getElementById('plot-energy');
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
 
-    const xRange = { min: 0, max: Math.max(data.length - 1, 1) };
+    // Use monotonically increasing step numbers — as the buffer slides
+    // the range always grows, so the X-axis labels change every frame.
+    const xRange = { min: first.step, max: last.step };
+    if (xRange.max - xRange.min < 1) xRange.max = xRange.min + 1;
 
     // Collect all three series to find a shared Y range
     const allVals = [];
@@ -748,15 +757,15 @@ function renderEnergyPlot() {
 
     // Draw each energy component
     drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
-        (_, i) => i, d => d.KE, '#ff6060');
+        d => d.step, d => d.KE, '#ff6060');
     drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
-        (_, i) => i, d => d.PE, '#30ff88');
+        d => d.step, d => d.PE, '#30ff88');
     drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
-        (_, i) => i, d => d.totalE, '#ffffff');
+        d => d.step, d => d.totalE, '#ffffff');
 
-    // Numeric ticks (Y values at most 1 decimal place)
+    // Numeric ticks — format X as frame count
     drawTickLabels(ctx, xRange.min, xRange.max, yRange.min, yRange.max,
-        'step', 'E', v => v.toFixed(0), v => v.toFixed(1));
+        'frame', 'E', v => v.toFixed(0), v => v.toFixed(1));
 
     // Plot border around inner area
     const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
@@ -895,24 +904,23 @@ function updateAngleDisplay() {
     el.innerHTML = html;
 }
 
-// Delegate click on angle-display entries to select pendulums.
-// Use document-level capture to bypass any pointer-events interception.
-document.addEventListener('click', (e) => {
+// Pick pendulums by clicking their angle-display entry.
+// Uses pointerdown (fires before click, separate event type) so
+// plot-canvas click handlers with stopPropagation never block it.
+document.addEventListener('pointerdown', (e) => {
     const entry = e.target.closest('.pend-entry');
     if (!entry) return;
-    // Only handle entries inside the angle display
     if (!document.getElementById('angle-display').contains(entry)) return;
     const idx = parseInt(entry.dataset.idx, 10);
-    if (!isNaN(idx) && pendulums[idx]) {
-        selectPendulum(idx);
-        // Brief visual flash to confirm the click
-        entry.style.transition = 'background 0s';
-        entry.style.background = 'rgba(255,255,255,0.18)';
-        requestAnimationFrame(() => {
-            entry.style.transition = '';
-            entry.style.background = '';
-        });
-    }
+    if (isNaN(idx) || !pendulums[idx]) return;
+    selectPendulum(idx);
+    // Brief visual flash to confirm the click
+    entry.style.transition = 'background 0s';
+    entry.style.background = 'rgba(255,255,255,0.18)';
+    requestAnimationFrame(() => {
+        entry.style.transition = '';
+        entry.style.background = '';
+    });
 });
 
 function updateControls() {

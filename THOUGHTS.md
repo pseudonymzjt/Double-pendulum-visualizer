@@ -801,15 +801,27 @@ When θ₁ wrapped from ~359° back to ~1° (crossing the 0° boundary), the nor
 
 ### Bug fix: Angle-display click not reaching handler
 
-The `.pend-entry` click handler used `document.getElementById('angle-display').addEventListener('click', ...)`. In rare cases (e.g. overlapping panel elements, zoomed plot), the angle-display element itself might not have received the event because it was intercepted by a higher-z child of the metrics panel.
+The `.pend-entry` click handler used `document.getElementById('angle-display').addEventListener('click', ...)`. The plot-canvas `click` handlers call `e.stopPropagation()`, which could block the `click` event from reaching the document. Additionally, when zoomed, the plot box sits at z-index 10, intercepting pointer events meant for the angle display underneath.
 
-**Fix**: Changed to document-level delegation:
+**Fix**: Changed to document-level `pointerdown` delegation (a separate event type from `click`, not affected by `click` handlers' `stopPropagation()`):
 ```js
-document.addEventListener('click', (e) => {
+document.addEventListener('pointerdown', (e) => {
     const entry = e.target.closest('.pend-entry');
     if (!entry || !document.getElementById('angle-display').contains(entry)) return;
-    // … handle click
+    // … select pendulum, flash background
 });
 ```
 Also adds a brief background flash (`rgba(255,255,255,0.18)` → removed on next frame) as visual confirmation that the click registered.
+
+### Bug fix: Energy-plot X-axis static once buffer fills
+
+Previously the energy plot used array index as X value (`(_, i) => i`) with `xRange.max = data.length - 1`. Once the 300-point ring buffer filled, `data.length` stayed at 300 forever, so the X-axis labels (0, 60, 120, 180, 240, 299) never changed — the user saw no indication that time was passing.
+
+**Root cause**: Array index is not monotonically increasing for a ring buffer — it wraps.
+
+**Fix**: Added a global `globalMetricsStep` counter that increments each time `collectMetrics()` runs (once per physics frame). Each metrics entry stores its step number. The energy plot now uses `d => d.step` as the X getter and derives the range from the first and last entries' step numbers:
+```js
+const xRange = { min: first.step, max: last.step };
+```
+Since the buffer always contains `[step_N−299, …, step_N]`, the range slides forward by 1 every frame, so the X-axis labels change continuously. Reset to 0 when metrics are cleared.
 
