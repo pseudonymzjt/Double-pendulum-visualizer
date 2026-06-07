@@ -4,7 +4,8 @@
    ============================================================ */
 
 // --- Constants --------------------------------------------------
-const G = 9.81;                  // gravitational acceleration (m/s²)
+const G = 11.0;                  // gravitational acceleration (m/s²)
+const DAMPING = 0.0003;          // per-frame velocity damping (fraction)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
 const SUB_STEPS = 4;             // RK4 sub-steps per frame
 const TRAIL_LENGTH = 1200;       // max trail points (~20 s at 60 fps)
@@ -329,6 +330,11 @@ function stepPhysics() {
 
         // Exact Lagrangian RK4 integration
         rk4Step(p, dt);
+
+        // Slight velocity damping — tiny fraction removed each frame
+        for (let i = 0; i < p.N; i++) {
+            p.omegas[i] *= (1 - DAMPING);
+        }
 
         // Convert angles → pixel positions
         computeParticlePositions(p);
