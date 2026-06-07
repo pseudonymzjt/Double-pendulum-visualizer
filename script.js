@@ -948,7 +948,7 @@ function updateControls() {
     if (hasSel) {
         const p = pendulums[selectedPendulum];
         document.getElementById('ctx-color').textContent = '🎨';
-        document.getElementById('ctx-visibility').textContent = p.visible ? '👁' : '👁‍🗨';
+        document.getElementById('ctx-visibility').textContent = p.visible ? '◉' : '◌';
         const n = p.constraints.length;
         document.getElementById('ctx-add-joint').style.display = '';
         document.getElementById('ctx-rm-joint').style.display = n > MIN_LINKS ? '' : 'none';
