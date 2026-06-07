@@ -431,6 +431,7 @@ function clearMetrics() {
 
 let PLOT_W = 290;
 let PLOT_H = 180;
+let zoomedPlotId = null;    // null, 'phase', or 'energy'
 
 /** Compute data range with ±10% padding, ensuring a minimum span. */
 function dataRange(values) {
@@ -487,12 +488,39 @@ function drawZeroAxes(ctx, xMin, xMax, yMin, yMax) {
     }
 }
 
-/** Draw axis labels at bottom-right (X) and top-left (Y). */
-function drawAxisLabels(ctx, xLabel, yLabel) {
-    ctx.font = 'bold 11px "SF Mono","Fira Code",monospace';
+/** Draw numeric tick labels along axes. */
+function drawTickLabels(ctx, xMin, xMax, yMin, yMax, xLabel, yLabel, xFmt, yFmt) {
+    const fmtX = xFmt || (v => v.toFixed(1));
+    const fmtY = yFmt || (v => v.toFixed(1));
+    ctx.font = '9px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'center';
+
+    // X-axis ticks (bottom, 5 ticks)
+    const txCount = 5;
+    for (let i = 0; i <= txCount; i++) {
+        const val = xMin + (xMax - xMin) * i / txCount;
+        const px = mapX(val, xMin, xMax, PLOT_W);
+        const label = fmtX(val);
+        ctx.fillText(label, px, PLOT_H - 4);
+    }
+
+    // Y-axis ticks (left, 4 ticks)
+    ctx.textAlign = 'right';
+    const tyCount = 4;
+    for (let i = 0; i <= tyCount; i++) {
+        const val = yMin + (yMax - yMin) * i / tyCount;
+        const py = mapY(val, yMin, yMax, PLOT_H);
+        const label = fmtY(val);
+        ctx.fillText(label, PLOT_W - 6, py + 3);
+    }
+
+    // Axis names
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 10px "SF Mono","Fira Code",monospace';
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText(xLabel, PLOT_W - 40, PLOT_H - 4);
-    ctx.fillText(yLabel, 6, 16);
+    ctx.fillText(xLabel, 6, PLOT_H - 5);
+    ctx.fillText(yLabel, 6, 14);
 }
 
 /**
@@ -589,6 +617,13 @@ function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
 
 function renderPhasePortrait() {
     const p = getTrackedPendulum();
+
+    // Update title immediately (even if no data yet)
+    const idx = pendulums.indexOf(p || pendulums[0]);
+    const pid = idx >= 0 ? idx : 0;
+    document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
+        .textContent = `Phase Space — Pendulum ${pid}  θ₁ vs ω₁    [ ] cycle`;
+
     if (!p || p.metrics.length < 2) return;
     const data = p.metrics;
     const N = p.N;
@@ -606,14 +641,11 @@ function renderPhasePortrait() {
     drawPlotGrid(ctx);
     drawZeroAxes(ctx, xRange.min, xRange.max, yRange.min, yRange.max);
 
-    // Update title to reflect pendulum identity and navigation hint
-    const idx = pendulums.indexOf(p);
-    const pid = idx >= 0 ? idx : 0;
-    const total = pendulums.filter(pp => pp.visible).length;
-    document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
-        .textContent = `Phase Space — Pendulum ${pid}  θ₁ vs ω₁    [ ] cycle`;
-
-    drawAxisLabels(ctx, 'θ₁', 'ω₁');
+    // Convert θ₁ to degrees for display
+    const xDeg = X.map(v => v * 180 / Math.PI);
+    const xDegRange = dataRange(xDeg);
+    drawTickLabels(ctx, xDegRange.min, xDegRange.max, yRange.min, yRange.max,
+        'θ₁(°)', 'ω₁', v => v.toFixed(0) + '°', v => v.toFixed(2));
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         d => d.thetas[0], d => d.omegas[0], p.color2);
 
@@ -649,27 +681,54 @@ function renderEnergyPlot() {
     drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         (_, i) => i, d => d.totalE, '#ffffff');
 
+    // Numeric ticks
+    drawTickLabels(ctx, xRange.min, xRange.max, yRange.min, yRange.max,
+        'step', 'E', v => v.toFixed(0), v => v.toFixed(2));
+
     // Plot border
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, PLOT_W - 1, PLOT_H - 1);
 
-    // Label markers (energy legend — top-left corner)
-    ctx.font = 'bold 10px "SF Mono","Fira Code",monospace';
+    // Compact colored-dot legend (top-left of data area)
+    const dotY = 18, gap = 12;
+    ctx.font = '8px "SF Mono","Fira Code",monospace';
+    // KE — coral square
     ctx.fillStyle = '#ff6060';
-    ctx.fillText('KE', 8, 18);
+    ctx.fillRect(6, dotY - 5, 6, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('KE', 15, dotY);
+    // PE — green square
     ctx.fillStyle = '#30ff88';
-    ctx.fillText('PE', 8, 32);
+    ctx.fillRect(6, dotY + gap - 5, 6, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('PE', 15, dotY + gap);
+    // Total — white square
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('E_total', 8, 46);
+    ctx.fillRect(6, dotY + 2 * gap - 5, 6, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText('E', 15, dotY + 2 * gap);
 }
 
 function toggleMetricsPanel() {
     metricsVisible = !metricsVisible;
     document.getElementById('metrics-panel').classList.toggle('show', metricsVisible);
+    zoomedPlotId = null;  // reset zoom on toggle
     if (!metricsVisible) {
         clearMetrics();
     }
+}
+
+/** Click a plot to zoom it full-screen; click again to shrink back. */
+function togglePlotZoom(plotId) {
+    if (zoomedPlotId === plotId) {
+        zoomedPlotId = null;
+    } else {
+        zoomedPlotId = plotId;
+    }
+    const panel = document.getElementById('metrics-panel');
+    panel.classList.toggle('zoom-phase', zoomedPlotId === 'phase');
+    panel.classList.toggle('zoom-energy', zoomedPlotId === 'energy');
 }
 
 // --- Controls ---------------------------------------------------
@@ -799,6 +858,18 @@ document.getElementById('btn-slow').addEventListener('click', () => {
 document.getElementById('btn-save').addEventListener('click', saveArtwork);
 document.getElementById('btn-add').addEventListener('click', addPendulum);
 document.getElementById('btn-metrics').addEventListener('click', toggleMetricsPanel);
+
+// Click-to-zoom on plot canvases (only when panel is visible)
+document.getElementById('plot-phase').addEventListener('click', (e) => {
+    if (!metricsVisible) return;
+    e.stopPropagation();
+    togglePlotZoom('phase');
+});
+document.getElementById('plot-energy').addEventListener('click', (e) => {
+    if (!metricsVisible) return;
+    e.stopPropagation();
+    togglePlotZoom('energy');
+});
 
 document.getElementById('ctx-color').addEventListener('click', cycleColor);
 document.getElementById('ctx-visibility').addEventListener('click', toggleVisibility);

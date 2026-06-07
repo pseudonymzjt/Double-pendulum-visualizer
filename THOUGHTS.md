@@ -623,3 +623,74 @@ A `getTrackedPendulum()` helper returns the selected pendulum (or `pendulums[0]`
 - ✅ Deletion of a pendulum removes its metrics; tracked pendulum falls back to `pendulums[0]` gracefully.
 - ✅ Dynamic title updates with pendulum index each frame.
 
+---
+
+# Phase 8 Refinements — Brightness, Tick Labels, Legend, Click-to-Zoom
+
+## Motivation
+
+The initial full-screen overlay graphs were too dark to read, hid the pendulum animation, and lacked numeric scale — making them uninterpretable. The energy legend ("KE / PE / E_total") was oversized and visually cluttered.
+
+## Layout: Full-screen → Floating Corner Panels
+
+**Why the change matters**: The graphs are a *supplement* to the animation, not a replacement. Full-screen blocked the entire viewport; floating corner panels let the user watch both simultaneously.
+
+Each plot now lives in an independent `plot-box`:
+- **Phase Portrait**: anchored `left: 14px; bottom: 80px` (330×240 px)
+- **Energy Plot**: anchored `right: 14px; bottom: 80px` (330×240 px)
+- Panel backgrounds use `rgba(10,10,15,0.65)` so the pendulum motion is faintly visible through the panels.
+- `pointer-events: none` on the panel container with `pointer-events: auto` on the boxes so clicks pass through empty space.
+
+## Brightness Overhaul
+
+| Element | Before | After |
+|---|---|---|
+| Grid lines | `rgba(255,255,255,0.06)` | `rgba(255,255,255,0.14)` |
+| Zero axes | `0.12 alpha, 1.0px` | `0.35 alpha, 1.2px` |
+| Phase portrait line | `1.2px, min α 0.07` | `1.5px core + 3.2px glow halo, min α 0.12` |
+| Energy lines | `1.2px solid` | `1.8px core + 3.5px glow halo per series` |
+| Plot border | none | `rgba(255,255,255,0.2)` stroke rect around each canvas |
+
+Glow halos are drawn as separate passes: a wide (3.2–3.5 px) low-alpha stroke first, then a narrow (1.5–1.8 px) high-alpha stroke on top. This creates a neon-like visual depth without external CSS effects.
+
+## Numeric Tick Labels
+
+A `drawTickLabels()` function places 5 evenly spaced numeric marks along the X axis and 4 along the Y axis:
+
+```
+Phase portrait:  X → angle in degrees (formatter: `v.toFixed(0) + '°'`)
+                 Y → angular velocity (formatter: `v.toFixed(2)`)
+Energy plot:     X → step index
+                 Y → energy in joules (formatter: `v.toFixed(2)`)
+```
+
+Axis names are drawn in bold at the origin point (bottom-left for X, top-left for Y). Tick values are positioned at `PLOT_H - 4` (X axis) and `PLOT_W - 6` (Y axis), with appropriate text alignment (`center` for X ticks, `right` for Y ticks).
+
+## Energy Legend — Compact Colored Dots
+
+Replaced the oversized bold text legend with small (6×6 px) colored squares + 8px labels:
+
+```
+■ KE    (coral #ff6060, y=18)
+■ PE    (green #30ff88, y=30)
+■ E     (white #ffffff, y=42)
+```
+
+Uses `fillRect` for the squares and tiny 8px `fillText` for the labels. The "E_total" was shortened to just "E" — the total-energy line is visually distinct (white, brightest), so no disambiguation needed.
+
+## Click-to-Zoom
+
+Left-clicking a plot canvas toggles between corner mode and full-screen:
+
+- **State**: `zoomedPlotId` ∈ `{null, 'phase', 'energy'}`
+- **CSS**: `#metrics-panel.zoom-phase .plot-box:nth-child(1)` fills 90% × 88% of viewport; the other plot gets `opacity: 0; pointer-events: none`
+- Clicking the zoomed plot again (or clicking the other plot) restores corner mode.
+- Zoom is reset when `toggleMetricsPanel()` hides the panel.
+- Guard: clicks are ignored when the panel is hidden.
+
+### Bug fix: stale title when no metrics data
+
+The title was updated **after** the `if (p.metrics.length < 2) return;` check — so if the newly selected pendulum had no data yet, the title never refreshed and showed the previous pendulum's index.
+
+**Fix**: Moved title update to the top of `renderPhasePortrait()`, before the data guard. The title always reflects `getTrackedPendulum()`.
+

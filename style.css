@@ -168,6 +168,31 @@ html, body {
     height: 240px;
 }
 
+/* --- Click-to-zoom — the zoomed plot fills most of the screen --- */
+#metrics-panel.zoom-phase .plot-box:nth-child(1),
+#metrics-panel.zoom-energy .plot-box:nth-child(2) {
+    left: 5%;
+    right: 5%;
+    top: 5%;
+    bottom: 12%;
+    width: auto;
+    height: auto;
+    z-index: 10;
+}
+
+/* Hide the non-zoomed plot */
+#metrics-panel.zoom-phase .plot-box:nth-child(2),
+#metrics-panel.zoom-energy .plot-box:nth-child(1) {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Cursor hint on plot canvases — clickable */
+#plot-phase,
+#plot-energy {
+    cursor: pointer;
+}
+
 .plot-title {
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
     font-size: 10px;
