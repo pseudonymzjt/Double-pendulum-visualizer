@@ -71,16 +71,34 @@ html, body {
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
     font-size: 11px;
     color: rgba(255, 255, 255, 0.35);
-    pointer-events: none;
     user-select: none;
     line-height: 1.7;
     background: rgba(10, 10, 15, 0.4);
-    padding: 6px 10px;
+    padding: 4px 6px;
     border-radius: 8px;
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
     max-height: calc(100vh - 100px);
     overflow-y: auto;
+}
+
+.pend-entry {
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: background 0.12s;
+    white-space: nowrap;
+}
+.pend-entry:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.pend-entry.sel {
+    background: rgba(255, 255, 255, 0.1);
+}
+.pend-entry .marker {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
 }
 
 #ctx-menu {

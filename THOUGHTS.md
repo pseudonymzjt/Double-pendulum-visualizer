@@ -760,3 +760,36 @@ Each label block sets both properties explicitly to avoid canvas state bleed:
 - Energy values: `29.7` instead of `29.65`
 - Added `niceNum()` helper (not yet used for tick interval snapping, but available for future refinement)
 
+---
+
+# Phase 8 Refinements — Fixed 0°–360° Range & Clickable Pendulum Selector
+
+## Constrain Phase Portrait X-axis to [0°, 360°]
+
+Previously the phase portrait's X-axis auto-scaled to whatever θ₁ range appeared in the data (e.g., −200° to 500°). This made the plot zoom in/out as the angle drifted, hiding the attractor shape.
+
+**Fix**: Normalise all θ₁ values into [0, 2π) before plotting:
+```js
+const norm = v => ((v % twoPi) + twoPi) % twoPi;
+const X = data.map(d => norm(d.thetas[0]));
+```
+The X range is fixed to [0, 2π] (0°–360°). The ω₁=0 line is still drawn as a horizontal zero axis. The left edge serves as the θ₁=0 line, so no vertical zero axis is needed.
+
+## Clickable Angle Display for Pendulum Selection
+
+Previously, switching pendulums required pausing and clicking bobs on the canvas. This was awkward when the metrics panel was open (you had to close it, pause, click, re-open).
+
+**Fix**: The angle display in the top-left corner now renders each pendulum as a clickable `<div>` with a `data-idx` attribute:
+```html
+<div class="pend-entry" data-idx="0" style="color:#00d4ff">
+  <span class="marker">●</span> θ₁ 46.3°  θ₂ 80.6°
+</div>
+```
+Clicking any pendulum entry calls `selectPendulum(idx)`, which updates the selection ring on the pendulum, shows the contextual menu, and switches which data the metrics plots display.
+
+### CSS changes
+- `pointer-events: none` removed from `#angle-display` → entries are now interactive
+- `.pend-entry` gets `cursor: pointer`, rounded background on hover (`rgba(255,255,255,0.08)`)
+- `.pend-entry.sel` gets a slightly brighter background (`rgba(255,255,255,0.1)`)
+- `.marker` spans have a fixed 14px width for consistent alignment of `▸` vs `●`
+

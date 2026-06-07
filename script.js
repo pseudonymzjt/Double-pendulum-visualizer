@@ -685,22 +685,30 @@ function renderPhasePortrait() {
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
 
-    // Plot θ₁ vs ω₁ (first link's phase space — meaningful for any N)
-    const X = data.map(d => d.thetas[0]);
+    // Normalise θ₁ to [0, 2π) for consistent 0°–360° view
+    const twoPi = 2 * Math.PI;
+    const norm = v => ((v % twoPi) + twoPi) % twoPi;
+    const X = data.map(d => norm(d.thetas[0]));
     const Y = data.map(d => d.omegas[0]);
-    const xRange = dataRange(X);
+    const xRange = { min: 0, max: twoPi };   // fixed range 0 → 2π
     const yRange = dataRange(Y);
 
     drawPlotGrid(ctx);
-    drawZeroAxes(ctx, xRange.min, xRange.max, yRange.min, yRange.max);
+    // Don't draw zero axes — fixed 0–2π range means zero line is always the left edge
+    // But ω₁=0 line is useful
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1.2;
+    if (yRange.min < 0 && yRange.max > 0) {
+        const y0 = pxY(0, yRange.min, yRange.max);
+        const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
+        ctx.beginPath(); ctx.moveTo(left, y0); ctx.lineTo(right, y0); ctx.stroke();
+    }
 
-    // Convert θ₁ to degrees for display
-    const xDeg = X.map(v => v * 180 / Math.PI);
-    const xDegRange = dataRange(xDeg);
-    drawTickLabels(ctx, xDegRange.min, xDegRange.max, yRange.min, yRange.max,
+    // Tick labels in degrees, fixed 0–360 range
+    drawTickLabels(ctx, 0, 360, yRange.min, yRange.max,
         'θ₁(°)', 'ω₁', v => v.toFixed(0) + '°', v => v.toFixed(1));
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
-        d => d.thetas[0], d => d.omegas[0], p.color2);
+        d => norm(d.thetas[0]), d => d.omegas[0], p.color2);
 
     // Plot border around inner area
     const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
@@ -859,7 +867,7 @@ function updateAngleDisplay() {
     const el = document.getElementById('angle-display');
     if (pendulums.length === 0) { el.innerHTML = ''; return; }
 
-    const lines = [];
+    let html = '';
     for (let idx = 0; idx < pendulums.length; idx++) {
         const p = pendulums[idx];
         if (!p.visible) continue;
@@ -870,10 +878,22 @@ function updateAngleDisplay() {
             parts.push(`θ${String.fromCharCode(0x2080 + i + 1)} ${deg.toFixed(1)}°`);
         }
         const marker = idx === selectedPendulum ? '▸' : '●';
-        lines.push(`<span style="color:${p.color2}">${marker}</span> ${parts.join('  ')}`);
+        const selClass = idx === selectedPendulum ? ' sel' : '';
+        html += `<div class="pend-entry${selClass}" data-idx="${idx}" style="color:${p.color2}">`
+            + `<span class="marker">${marker}</span> ${parts.join('  ')}</div>`;
     }
-    el.innerHTML = lines.join('<br>');
+    el.innerHTML = html;
 }
+
+// Delegate click on angle-display entries to select pendulums
+document.getElementById('angle-display').addEventListener('click', (e) => {
+    const entry = e.target.closest('.pend-entry');
+    if (!entry) return;
+    const idx = parseInt(entry.dataset.idx, 10);
+    if (!isNaN(idx) && pendulums[idx]) {
+        selectPendulum(idx);
+    }
+});
 
 function updateControls() {
     document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
