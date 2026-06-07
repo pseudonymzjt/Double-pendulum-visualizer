@@ -82,6 +82,82 @@ html, body {
     overflow-y: auto;
 }
 
+/* --- Params panel (top-right sliders) --- */
+
+#params-panel {
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 4;
+    font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+    user-select: none;
+    background: rgba(10, 10, 15, 0.4);
+    padding: 8px 10px;
+    border-radius: 8px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 160px;
+}
+
+.param-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.param-row label {
+    width: 48px;
+    flex-shrink: 0;
+    text-align: right;
+}
+
+.param-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    min-width: 60px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.param-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.param-row input[type="range"]::-webkit-slider-thumb:hover {
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.param-row input[type="range"]::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+}
+
+.param-value {
+    width: 48px;
+    text-align: left;
+    flex-shrink: 0;
+}
+
 .pend-entry {
     cursor: pointer;
     padding: 2px 6px;

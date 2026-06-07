@@ -4,8 +4,9 @@
    ============================================================ */
 
 // --- Constants --------------------------------------------------
-const G = 11.0;                  // gravitational acceleration (m/s²)
-const DAMPING = 0.0003;          // per-frame velocity damping (fraction)
+let G = 11.0;                    // gravitational acceleration (m/s²)
+let DAMPING = 0.0003;            // per-frame velocity damping (fraction)
+let speedMultiplier = 1.0;       // physics speed multiplier (0.2–3.0)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
 const SUB_STEPS = 4;             // RK4 sub-steps per frame
 const TRAIL_LENGTH = 1200;       // max trail points (~20 s at 60 fps)
@@ -323,7 +324,7 @@ function rk4Step(p, dt) {
 }
 
 function stepPhysics() {
-    const dt = slowMo ? 1 / 120 : 1 / 60;
+    const dt = (slowMo ? 1 / 120 : 1 / 60) * speedMultiplier;
 
     for (const p of pendulums) {
         if (!p.visible) continue;
@@ -967,6 +968,23 @@ document.getElementById('btn-slow').addEventListener('click', () => {
 });
 
 document.getElementById('btn-save').addEventListener('click', saveArtwork);
+
+// --- Parameter sliders ---
+
+document.getElementById('param-gravity').addEventListener('input', (e) => {
+    G = parseFloat(e.target.value);
+    document.getElementById('grav-value').textContent = G.toFixed(1);
+});
+
+document.getElementById('param-damping').addEventListener('input', (e) => {
+    DAMPING = parseFloat(e.target.value);
+    document.getElementById('damp-value').textContent = DAMPING.toFixed(4);
+});
+
+document.getElementById('param-speed').addEventListener('input', (e) => {
+    speedMultiplier = parseFloat(e.target.value);
+    document.getElementById('speed-value').textContent = speedMultiplier.toFixed(1) + '×';
+});
 document.getElementById('btn-add').addEventListener('click', addPendulum);
 document.getElementById('btn-metrics').addEventListener('click', toggleMetricsPanel);
 
