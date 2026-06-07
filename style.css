@@ -343,8 +343,8 @@ html, body {
     /* Params panel — hidden by default on mobile, toggled by gear */
     #params-panel {
         display: none;
-        top: auto;
-        bottom: 55px;
+        top: 52px;
+        bottom: auto;
         right: 10px;
         min-width: 140px;
         padding: 6px 8px;
