@@ -10,7 +10,7 @@ let speedMultiplier = 1.0;       // physics speed multiplier (0.2–3.0)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
 const SUB_STEPS = 4;             // RK4 sub-steps per frame
 // Trail length — capped lower on mobile for performance
-const isMobile = window.matchMedia("(max-width: 768px)").matches;
+const isMobile = window.matchMedia ? window.matchMedia("(max-width: 768px)").matches : false;
 let TRAIL_LENGTH = isMobile ? 600 : 1200;  // max trail points
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians
@@ -1389,4 +1389,8 @@ function animate() {
 addPendulum();
 resizeCanvas();
 updateControls();
+// Paint an initial frame synchronously so the pendulum is visible
+// immediately — don't wait for the first rAF callback.
+draw();
+updateAngleDisplay();
 animate();
