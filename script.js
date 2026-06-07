@@ -460,8 +460,8 @@ function setupPlotCanvas(canvas, ctx) {
 
 /** Draw dashed grid lines (horizontal + vertical). */
 function drawPlotGrid(ctx) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 0.8;
     const nx = 6, ny = 5;
     for (let i = 0; i <= nx; i++) {
         const x = PLOT_W * i / nx;
@@ -475,8 +475,8 @@ function drawPlotGrid(ctx) {
 
 /** Draw axis zero-lines for phase portraits. */
 function drawZeroAxes(ctx, xMin, xMax, yMin, yMax) {
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1.2;
     if (xMin < 0 && xMax > 0) {
         const x0 = mapX(0, xMin, xMax, PLOT_W);
         ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, PLOT_H); ctx.stroke();
@@ -487,12 +487,12 @@ function drawZeroAxes(ctx, xMin, xMax, yMin, yMax) {
     }
 }
 
-/** Draw axis labels at bottom-left (X) and top-left (Y). */
+/** Draw axis labels at bottom-right (X) and top-left (Y). */
 function drawAxisLabels(ctx, xLabel, yLabel) {
-    ctx.font = '10px "SF Mono","Fira Code",monospace';
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.fillText(xLabel, PLOT_W - 36, PLOT_H - 4);
-    ctx.fillText(yLabel, 6, 14);
+    ctx.font = 'bold 11px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText(xLabel, PLOT_W - 40, PLOT_H - 4);
+    ctx.fillText(yLabel, 6, 16);
 }
 
 /**
@@ -517,9 +517,26 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
         if (start >= end) break;
 
         const t = (bIdx + 1) / batches;
-        const alpha = 0.07 + t * 0.83;
+        const alpha = 0.12 + t * 0.83;
+        const haloAlpha = alpha * 0.35;
+
+        // Faint glow halo
+        ctx.strokeStyle = `rgba(${r},${g},${b},${haloAlpha.toFixed(3)})`;
+        ctx.lineWidth = 3.2;
+        ctx.beginPath();
+        for (let i = start; i <= end; i++) {
+            const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
+            const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
+            const clamped = px >= -2 && px <= PLOT_W + 2 && py >= -2 && py <= PLOT_H + 2;
+            if (!clamped) { ctx.stroke(); ctx.beginPath(); continue; }
+            if (i === start) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+
+        // Core bright line
         ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         for (let i = start; i <= end; i++) {
             const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
@@ -536,8 +553,27 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
 /** Draw a solid multi-series line chart (for energy). */
 function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     if (data.length < 2) return;
+
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+
+    // Faint glow halo
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.25)`;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    for (let i = 0; i < data.length; i++) {
+        const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
+        const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
+        if (px < -5 || px > PLOT_W + 5) { ctx.stroke(); ctx.beginPath(); continue; }
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Core bright line
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
     for (let i = 0; i < data.length; i++) {
         const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
@@ -580,6 +616,11 @@ function renderPhasePortrait() {
     drawAxisLabels(ctx, 'θ₁', 'ω₁');
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         d => d.thetas[0], d => d.omegas[0], p.color2);
+
+    // Plot border
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, PLOT_W - 1, PLOT_H - 1);
 }
 
 function renderEnergyPlot() {
@@ -608,14 +649,19 @@ function renderEnergyPlot() {
     drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         (_, i) => i, d => d.totalE, '#ffffff');
 
-    // Label markers
-    ctx.font = '9px "SF Mono","Fira Code",monospace';
+    // Plot border
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, PLOT_W - 1, PLOT_H - 1);
+
+    // Label markers (energy legend — top-left corner)
+    ctx.font = 'bold 10px "SF Mono","Fira Code",monospace';
     ctx.fillStyle = '#ff6060';
-    ctx.fillText('KE', 6, 14);
+    ctx.fillText('KE', 8, 18);
     ctx.fillStyle = '#30ff88';
-    ctx.fillText('PE', 6, 26);
+    ctx.fillText('PE', 8, 32);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('E_total', 6, 38);
+    ctx.fillText('E_total', 8, 46);
 }
 
 function toggleMetricsPanel() {

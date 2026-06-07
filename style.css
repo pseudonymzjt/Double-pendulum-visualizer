@@ -116,7 +116,7 @@ html, body {
     opacity: 1;
 }
 
-/* --- Metrics Panel (Phase 8) --- Full-screen overlay */
+/* --- Metrics Panel (Phase 8) --- Two floating corner overlaid panels */
 
 #metrics-panel {
     position: fixed;
@@ -125,13 +125,7 @@ html, body {
     width: 100%;
     height: 100%;
     z-index: 3;
-    display: flex;
-    flex-direction: column;
-    padding: 48px 24px 80px;
-    gap: 6px;
-    background: rgba(10, 10, 15, 0.94);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    pointer-events: none;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
@@ -144,27 +138,51 @@ html, body {
 }
 
 .plot-box {
-    flex: 1;
+    position: absolute;
     display: flex;
     flex-direction: column;
-    min-height: 0;
+    gap: 2px;
+    padding: 8px;
+    background: rgba(10, 10, 15, 0.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+}
+
+/* Phase portrait — bottom-left corner */
+#metrics-panel .plot-box:nth-child(1) {
+    left: 14px;
+    bottom: 80px;
+    width: 330px;
+    height: 240px;
+}
+
+/* Energy plot — bottom-right corner */
+#metrics-panel .plot-box:nth-child(2) {
+    right: 14px;
+    bottom: 80px;
+    width: 330px;
+    height: 240px;
 }
 
 .plot-title {
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.3);
-    margin-bottom: 3px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
     user-select: none;
     letter-spacing: 0.4px;
-    padding-left: 2px;
+    padding: 0 2px;
+    flex-shrink: 0;
 }
 
 #plot-phase,
 #plot-energy {
     width: 100%;
     flex: 1;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.3);
     min-height: 0;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.35);
 }
