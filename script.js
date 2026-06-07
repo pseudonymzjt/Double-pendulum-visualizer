@@ -136,7 +136,6 @@ function rebuildChain(p, nLinks, thetaDeg) {
 const pendulums = [];
 let chaosMode = false;
 let paused = false;
-let slowMo = false;
 let selectedPendulum = null;
 let paletteIdx = 0;
 
@@ -326,7 +325,7 @@ function rk4Step(p, dt) {
 }
 
 function stepPhysics() {
-    const dt = (slowMo ? 1 / 120 : 1 / 60) * speedMultiplier;
+    const dt = (1 / 60) * speedMultiplier;
 
     for (const p of pendulums) {
         if (!p.visible) continue;
@@ -698,7 +697,7 @@ function renderPhasePortrait() {
     const idx = pendulums.indexOf(p || pendulums[0]);
     const pid = idx >= 0 ? idx : 0;
     document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
-        .textContent = `Phase Space — Pendulum ${pid}  θ₁ vs ω₁    [ ] cycle`;
+        .textContent = `Phase Space — Pendulum ${pid}  θ vs ω    [ ] cycle`;
 
     if (!p || p.metrics.length < 2) return;
     const data = p.metrics;
@@ -737,7 +736,7 @@ function renderPhasePortrait() {
 
     // Tick labels in degrees, fixed -180–180 range
     drawTickLabels(ctx, -180, 180, yRange.min, yRange.max,
-        'θ₁(°)', 'ω₁', v => v.toFixed(0) + '°', v => v.toFixed(1));
+        'θ(°)', 'ω', v => v.toFixed(0) + '°', v => v.toFixed(1));
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         d => norm(d.thetas[0]), d => d.omegas[0], p.color2);
 
@@ -947,8 +946,6 @@ document.addEventListener('pointerdown', (e) => {
 function updateControls() {
     document.getElementById('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
     document.getElementById('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
-    document.getElementById('btn-slow').textContent = slowMo ? '⏱ 1× Speed' : '⏱ ½× Slow';
-
     const hasSel = selectedPendulum !== null && pendulums[selectedPendulum];
     document.getElementById('ctx-menu').classList.toggle('show', !!hasSel);
     updateAngleDisplay();
@@ -978,11 +975,6 @@ document.getElementById('btn-play').addEventListener('click', () => {
 document.getElementById('btn-reset').addEventListener('click', resetSimulation);
 document.getElementById('btn-chaos').addEventListener('click', toggleChaos);
 document.getElementById('btn-clear').addEventListener('click', clearTrails);
-
-document.getElementById('btn-slow').addEventListener('click', () => {
-    slowMo = !slowMo;
-    updateControls();
-});
 
 document.getElementById('btn-save').addEventListener('click', saveArtwork);
 
