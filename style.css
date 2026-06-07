@@ -179,7 +179,7 @@ html, body {
 
 #ctx-menu {
     position: fixed;
-    bottom: 62px;
+    bottom: 105px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 4;
