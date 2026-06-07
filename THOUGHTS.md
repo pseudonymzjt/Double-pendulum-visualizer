@@ -793,3 +793,23 @@ Clicking any pendulum entry calls `selectPendulum(idx)`, which updates the selec
 - `.pend-entry.sel` gets a slightly brighter background (`rgba(255,255,255,0.1)`)
 - `.marker` spans have a fixed 14px width for consistent alignment of `▸` vs `●`
 
+### Bug fix: Spurious cross-graph line on phase portrait wrap
+
+When θ₁ wrapped from ~359° back to ~1° (crossing the 0° boundary), the normalised data values were at opposite ends of the [0, 2π) range, creating a straight line across the entire graph.
+
+**Fix**: `drawFadingLine` now detects consecutive X data values that jump by more than half the range (wrapThreshold = range × 0.5). When such a jump is detected, the current path is stroked and a new path begins at the current point — exactly like the out-of-bounds clipping logic. The halo and core passes each handle this independently.
+
+### Bug fix: Angle-display click not reaching handler
+
+The `.pend-entry` click handler used `document.getElementById('angle-display').addEventListener('click', ...)`. In rare cases (e.g. overlapping panel elements, zoomed plot), the angle-display element itself might not have received the event because it was intercepted by a higher-z child of the metrics panel.
+
+**Fix**: Changed to document-level delegation:
+```js
+document.addEventListener('click', (e) => {
+    const entry = e.target.closest('.pend-entry');
+    if (!entry || !document.getElementById('angle-display').contains(entry)) return;
+    // … handle click
+});
+```
+Also adds a brief background flash (`rgba(255,255,255,0.18)` → removed on next frame) as visual confirmation that the click registered.
+

@@ -563,10 +563,7 @@ function drawTickLabels(ctx, xMin, xMax, yMin, yMax, xLabel, yLabel, xFmt, yFmt)
     ctx.fillText(yLabel, left - 2, PLOT_MARGIN.top - 16);
 }
 
-/**
- * Draw a single fading line through a data series.
- * Clipped to the inner plot area.
- */
+/** Draw a single fading line through a data series with wrap detection. */
 function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     const len = data.length;
     if (len < 2) return;
@@ -583,6 +580,12 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     const top = PLOT_MARGIN.top;
     const bot = PLOT_H - PLOT_MARGIN.bottom;
 
+    // If a consecutive pair of X values jumps by more than half the data
+    // range, break the line — avoids spurious cross-graph segments from
+    // angle wrapping (359° → 1°).
+    const xRange = xMax - xMin;
+    const wrapThreshold = xRange * 0.5;
+
     for (let bIdx = 0; bIdx < batches; bIdx++) {
         const start = bIdx * batchSize;
         const end = Math.min(start + batchSize, segments);
@@ -592,33 +595,40 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
         const alpha = 0.12 + t * 0.83;
         const haloAlpha = alpha * 0.35;
 
-        // Faint glow halo
-        ctx.strokeStyle = `rgba(${r},${g},${b},${haloAlpha.toFixed(3)})`;
-        ctx.lineWidth = 3.2;
-        ctx.beginPath();
-        for (let i = start; i <= end; i++) {
-            const px = pxX(getX(data[i], i), xMin, xMax);
-            const py = pxY(getY(data[i], i), yMin, yMax);
-            const inBounds = px >= left - 2 && px <= right + 2 && py >= top - 2 && py <= bot + 2;
-            if (!inBounds) { ctx.stroke(); ctx.beginPath(); continue; }
-            if (i === start) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-        }
-        ctx.stroke();
+        // --- Draw one batch: halo pass + core pass ---
+        for (let pass = 0; pass < 2; pass++) {
+            const isHalo = pass === 0;
+            ctx.strokeStyle = isHalo
+                ? `rgba(${r},${g},${b},${haloAlpha.toFixed(3)})`
+                : `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+            ctx.lineWidth = isHalo ? 3.2 : 1.5;
+            ctx.beginPath();
 
-        // Core bright line
-        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (let i = start; i <= end; i++) {
-            const px = pxX(getX(data[i], i), xMin, xMax);
-            const py = pxY(getY(data[i], i), yMin, yMax);
-            const inBounds = px >= left - 2 && px <= right + 2 && py >= top - 2 && py <= bot + 2;
-            if (!inBounds) { ctx.stroke(); ctx.beginPath(); continue; }
-            if (i === start) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
+            for (let i = start; i <= end; i++) {
+                const xv = getX(data[i], i);
+                const px = pxX(xv, xMin, xMax);
+                const py = pxY(getY(data[i], i), yMin, yMax);
+                const inBounds = px >= left - 2 && px <= right + 2 && py >= top - 2 && py <= bot + 2;
+                if (!inBounds) { ctx.stroke(); ctx.beginPath(); continue; }
+
+                if (i === start) {
+                    ctx.moveTo(px, py);
+                } else {
+                    // Detect angular/cyclic wrap — break the line so we don't
+                    // connect two points that are adjacent in time but far
+                    // apart in the cyclic coordinate (e.g. 358° → 2°).
+                    const prevX = getX(data[i - 1], i - 1);
+                    if (Math.abs(xv - prevX) > wrapThreshold) {
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(px, py);
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
+                }
+            }
+            ctx.stroke();
         }
-        ctx.stroke();
     }
 }
 
@@ -885,13 +895,23 @@ function updateAngleDisplay() {
     el.innerHTML = html;
 }
 
-// Delegate click on angle-display entries to select pendulums
-document.getElementById('angle-display').addEventListener('click', (e) => {
+// Delegate click on angle-display entries to select pendulums.
+// Use document-level capture to bypass any pointer-events interception.
+document.addEventListener('click', (e) => {
     const entry = e.target.closest('.pend-entry');
     if (!entry) return;
+    // Only handle entries inside the angle display
+    if (!document.getElementById('angle-display').contains(entry)) return;
     const idx = parseInt(entry.dataset.idx, 10);
     if (!isNaN(idx) && pendulums[idx]) {
         selectPendulum(idx);
+        // Brief visual flash to confirm the click
+        entry.style.transition = 'background 0s';
+        entry.style.background = 'rgba(255,255,255,0.18)';
+        requestAnimationFrame(() => {
+            entry.style.transition = '';
+            entry.style.background = '';
+        });
     }
 });
 
