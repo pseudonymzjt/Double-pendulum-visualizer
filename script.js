@@ -433,6 +433,11 @@ let PLOT_W = 290;
 let PLOT_H = 180;
 let zoomedPlotId = null;    // null, 'phase', or 'energy'
 
+const PLOT_MARGIN = { left: 58, right: 58, top: 38, bottom: 40 };
+
+function innerW() { return PLOT_W - PLOT_MARGIN.left - PLOT_MARGIN.right; }
+function innerH() { return PLOT_H - PLOT_MARGIN.top - PLOT_MARGIN.bottom; }
+
 /** Compute data range with ±10% padding, ensuring a minimum span. */
 function dataRange(values) {
     let lo = Infinity, hi = -Infinity;
@@ -442,9 +447,21 @@ function dataRange(values) {
     return { min: lo - pad, max: hi + pad };
 }
 
-/** Map a data value to a canvas pixel coordinate. */
-function mapX(val, min, max, w) { return w * (val - min) / (max - min); }
-function mapY(val, min, max, h) { return h * (1 - (val - min) / (max - min)); }
+/** Round a tick value to a nicer number. */
+function niceNum(val) {
+    const exp = Math.pow(10, Math.floor(Math.log10(Math.abs(val))));
+    return Math.round(val / exp) * exp;
+}
+
+/** Map data → canvas pixel (inner plot area with margins). */
+function pxX(dataVal, dataMin, dataMax) {
+    if (dataMax === dataMin) return PLOT_MARGIN.left + innerW() / 2;
+    return PLOT_MARGIN.left + innerW() * (dataVal - dataMin) / (dataMax - dataMin);
+}
+function pxY(dataVal, dataMin, dataMax) {
+    if (dataMax === dataMin) return PLOT_MARGIN.top + innerH() / 2;
+    return PLOT_MARGIN.top + innerH() * (1 - (dataVal - dataMin) / (dataMax - dataMin));
+}
 
 /** Setup HiDPI canvas context for a plot. Reads CSS dimensions. */
 function setupPlotCanvas(canvas, ctx) {
@@ -459,74 +476,96 @@ function setupPlotCanvas(canvas, ctx) {
     ctx.clearRect(0, 0, w, h);
 }
 
-/** Draw dashed grid lines (horizontal + vertical). */
+/** Draw dashed grid lines (horizontal + vertical) within margins. */
 function drawPlotGrid(ctx) {
     ctx.strokeStyle = 'rgba(255,255,255,0.14)';
     ctx.lineWidth = 0.8;
+    const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
+    const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
     const nx = 6, ny = 5;
     for (let i = 0; i <= nx; i++) {
-        const x = PLOT_W * i / nx;
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, PLOT_H); ctx.stroke();
+        const x = left + innerW() * i / nx;
+        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bot); ctx.stroke();
     }
     for (let i = 0; i <= ny; i++) {
-        const y = PLOT_H * i / ny;
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(PLOT_W, y); ctx.stroke();
+        const y = top + innerH() * i / ny;
+        ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
     }
 }
 
-/** Draw axis zero-lines for phase portraits. */
+/** Draw axis zero-lines for phase portraits, clipped to margin area. */
 function drawZeroAxes(ctx, xMin, xMax, yMin, yMax) {
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 1.2;
+    const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
+    const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
     if (xMin < 0 && xMax > 0) {
-        const x0 = mapX(0, xMin, xMax, PLOT_W);
-        ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, PLOT_H); ctx.stroke();
+        const x0 = pxX(0, xMin, xMax);
+        ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, bot); ctx.stroke();
     }
     if (yMin < 0 && yMax > 0) {
-        const y0 = mapY(0, yMin, yMax, PLOT_H);
-        ctx.beginPath(); ctx.moveTo(0, y0); ctx.lineTo(PLOT_W, y0); ctx.stroke();
+        const y0 = pxY(0, yMin, yMax);
+        ctx.beginPath(); ctx.moveTo(left, y0); ctx.lineTo(right, y0); ctx.stroke();
     }
 }
 
-/** Draw numeric tick labels along axes. */
+/** Draw numeric tick labels in the margins. */
 function drawTickLabels(ctx, xMin, xMax, yMin, yMax, xLabel, yLabel, xFmt, yFmt) {
     const fmtX = xFmt || (v => v.toFixed(1));
     const fmtY = yFmt || (v => v.toFixed(1));
+    const bot = PLOT_H - PLOT_MARGIN.bottom;
+    const left = PLOT_MARGIN.left;
+
+    // --- X-axis ticks (bottom margin, 5 ticks) ---
     ctx.font = '9px "SF Mono","Fira Code",monospace';
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
 
-    // X-axis ticks (bottom, 5 ticks)
     const txCount = 5;
     for (let i = 0; i <= txCount; i++) {
         const val = xMin + (xMax - xMin) * i / txCount;
-        const px = mapX(val, xMin, xMax, PLOT_W);
+        const px = pxX(val, xMin, xMax);
         const label = fmtX(val);
-        ctx.fillText(label, px, PLOT_H - 4);
+        // Tick mark
+        ctx.beginPath(); ctx.moveTo(px, bot); ctx.lineTo(px, bot + 5); ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.stroke();
+        ctx.fillText(label, px, bot + 7);
     }
 
-    // Y-axis ticks (left, 4 ticks)
-    ctx.textAlign = 'right';
+    // X-axis name (in bottom margin, centered)
+    ctx.font = 'bold 10px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(xLabel, PLOT_W - PLOT_MARGIN.right + 12, bot - 4);
+
+    // --- Y-axis ticks (right margin, 5 ticks) ---
+    ctx.font = '9px "SF Mono","Fira Code",monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+
+    const right = PLOT_W - PLOT_MARGIN.right;
     const tyCount = 4;
     for (let i = 0; i <= tyCount; i++) {
         const val = yMin + (yMax - yMin) * i / tyCount;
-        const py = mapY(val, yMin, yMax, PLOT_H);
+        const py = pxY(val, yMin, yMax);
         const label = fmtY(val);
-        ctx.fillText(label, PLOT_W - 6, py + 3);
+        // Tick mark
+        ctx.beginPath(); ctx.moveTo(right, py); ctx.lineTo(right + 5, py); ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.stroke();
+        ctx.fillText(label, right + 9, py);
     }
 
-    // Axis names
+    // Y-axis name (top-left of inner area)
     ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
     ctx.font = 'bold 10px "SF Mono","Fira Code",monospace';
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText(xLabel, 6, PLOT_H - 5);
-    ctx.fillText(yLabel, 6, 14);
+    ctx.fillText(yLabel, left - 2, PLOT_MARGIN.top - 16);
 }
 
 /**
  * Draw a single fading line through a data series.
- * `getX` / `getY` extract coordinates from each datum.
- * Older segments are more transparent, newer ones brighter.
+ * Clipped to the inner plot area.
  */
 function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     const len = data.length;
@@ -538,6 +577,11 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     const segments = len - 1;
     const batches = 48;
     const batchSize = Math.max(1, Math.ceil(segments / batches));
+
+    const left = PLOT_MARGIN.left;
+    const right = PLOT_W - PLOT_MARGIN.right;
+    const top = PLOT_MARGIN.top;
+    const bot = PLOT_H - PLOT_MARGIN.bottom;
 
     for (let bIdx = 0; bIdx < batches; bIdx++) {
         const start = bIdx * batchSize;
@@ -553,10 +597,10 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
         ctx.lineWidth = 3.2;
         ctx.beginPath();
         for (let i = start; i <= end; i++) {
-            const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
-            const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
-            const clamped = px >= -2 && px <= PLOT_W + 2 && py >= -2 && py <= PLOT_H + 2;
-            if (!clamped) { ctx.stroke(); ctx.beginPath(); continue; }
+            const px = pxX(getX(data[i], i), xMin, xMax);
+            const py = pxY(getY(data[i], i), yMin, yMax);
+            const inBounds = px >= left - 2 && px <= right + 2 && py >= top - 2 && py <= bot + 2;
+            if (!inBounds) { ctx.stroke(); ctx.beginPath(); continue; }
             if (i === start) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
         }
@@ -567,18 +611,18 @@ function drawFadingLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         for (let i = start; i <= end; i++) {
-            const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
-            const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
-            const clamped = px >= -2 && px <= PLOT_W + 2 && py >= -2 && py <= PLOT_H + 2;
-            if (!clamped) { ctx.stroke(); ctx.beginPath(); continue; }
-            if (i === start || !clamped) ctx.moveTo(px, py);
+            const px = pxX(getX(data[i], i), xMin, xMax);
+            const py = pxY(getY(data[i], i), yMin, yMax);
+            const inBounds = px >= left - 2 && px <= right + 2 && py >= top - 2 && py <= bot + 2;
+            if (!inBounds) { ctx.stroke(); ctx.beginPath(); continue; }
+            if (i === start) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
         }
         ctx.stroke();
     }
 }
 
-/** Draw a solid multi-series line chart (for energy). */
+/** Draw a solid multi-series line chart (for energy), clipped to margins. */
 function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     if (data.length < 2) return;
 
@@ -586,14 +630,21 @@ function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
 
+    const left = PLOT_MARGIN.left;
+    const right = PLOT_W - PLOT_MARGIN.right;
+    const top = PLOT_MARGIN.top;
+    const bot = PLOT_H - PLOT_MARGIN.bottom;
+
     // Faint glow halo
     ctx.strokeStyle = `rgba(${r},${g},${b},0.25)`;
     ctx.lineWidth = 3.5;
     ctx.beginPath();
     for (let i = 0; i < data.length; i++) {
-        const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
-        const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
-        if (px < -5 || px > PLOT_W + 5) { ctx.stroke(); ctx.beginPath(); continue; }
+        const px = pxX(getX(data[i], i), xMin, xMax);
+        const py = pxY(getY(data[i], i), yMin, yMax);
+        if (px < left - 5 || px > right + 5 || py < top - 5 || py > bot + 5) {
+            ctx.stroke(); ctx.beginPath(); continue;
+        }
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
     }
@@ -604,9 +655,11 @@ function drawSolidLine(ctx, data, xMin, xMax, yMin, yMax, getX, getY, color) {
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     for (let i = 0; i < data.length; i++) {
-        const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
-        const py = mapY(getY(data[i], i), yMin, yMax, PLOT_H);
-        if (px < -5 || px > PLOT_W + 5) { ctx.stroke(); ctx.beginPath(); continue; }
+        const px = pxX(getX(data[i], i), xMin, xMax);
+        const py = pxY(getY(data[i], i), yMin, yMax);
+        if (px < left - 5 || px > right + 5 || py < top - 5 || py > bot + 5) {
+            ctx.stroke(); ctx.beginPath(); continue;
+        }
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
     }
@@ -645,14 +698,16 @@ function renderPhasePortrait() {
     const xDeg = X.map(v => v * 180 / Math.PI);
     const xDegRange = dataRange(xDeg);
     drawTickLabels(ctx, xDegRange.min, xDegRange.max, yRange.min, yRange.max,
-        'θ₁(°)', 'ω₁', v => v.toFixed(0) + '°', v => v.toFixed(2));
+        'θ₁(°)', 'ω₁', v => v.toFixed(0) + '°', v => v.toFixed(1));
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         d => d.thetas[0], d => d.omegas[0], p.color2);
 
-    // Plot border
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    // Plot border around inner area
+    const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
+    const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, PLOT_W - 1, PLOT_H - 1);
+    ctx.strokeRect(left - 0.5, top - 0.5, right - left + 1, bot - top + 1);
 }
 
 function renderEnergyPlot() {
@@ -681,33 +736,35 @@ function renderEnergyPlot() {
     drawSolidLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         (_, i) => i, d => d.totalE, '#ffffff');
 
-    // Numeric ticks
+    // Numeric ticks (Y values at most 1 decimal place)
     drawTickLabels(ctx, xRange.min, xRange.max, yRange.min, yRange.max,
-        'step', 'E', v => v.toFixed(0), v => v.toFixed(2));
+        'step', 'E', v => v.toFixed(0), v => v.toFixed(1));
 
-    // Plot border
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    // Plot border around inner area
+    const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
+    const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(0.5, 0.5, PLOT_W - 1, PLOT_H - 1);
+    ctx.strokeRect(left - 0.5, top - 0.5, right - left + 1, bot - top + 1);
 
-    // Compact colored-dot legend (top-left of data area)
-    const dotY = 18, gap = 12;
+    // Compact colored-dot legend (anchored to top-left of inner plot area)
+    const lx = left + 6, ly = top + 6, gap = 12;
     ctx.font = '8px "SF Mono","Fira Code",monospace';
     // KE — coral square
     ctx.fillStyle = '#ff6060';
-    ctx.fillRect(6, dotY - 5, 6, 6);
+    ctx.fillRect(lx, ly - 5, 6, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText('KE', 15, dotY);
+    ctx.fillText('KE', lx + 9, ly);
     // PE — green square
     ctx.fillStyle = '#30ff88';
-    ctx.fillRect(6, dotY + gap - 5, 6, 6);
+    ctx.fillRect(lx, ly + gap - 5, 6, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText('PE', 15, dotY + gap);
+    ctx.fillText('PE', lx + 9, ly + gap);
     // Total — white square
     ctx.fillStyle = '#ffffff';
-    ctx.fillRect(6, dotY + 2 * gap - 5, 6, 6);
+    ctx.fillRect(lx, ly + 2 * gap - 5, 6, 6);
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillText('E', 15, dotY + 2 * gap);
+    ctx.fillText('E', lx + 9, ly + 2 * gap);
 }
 
 function toggleMetricsPanel() {

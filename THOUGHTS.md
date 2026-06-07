@@ -694,3 +694,69 @@ The title was updated **after** the `if (p.metrics.length < 2) return;` check �
 
 **Fix**: Moved title update to the top of `renderPhasePortrait()`, before the data guard. The title always reflects `getTrackedPendulum()`.
 
+---
+
+# Phase 8 Refinements — Internal Padding & Tick Labels
+
+## Motivation
+
+The plotting area had zero internal margins, causing:
+1. X-axis title (`θ₁(°)` / `step`) overlapping the coordinate numbers
+2. Left-side text (axis labels, tick numbers) clipped by the canvas edge
+3. Graph title and legend squeezed into the top-left corner, overlapping each other
+
+Additionally, Y-axis labels showed ugly arbitrary decimals like `62.87` and `-53.21` because the default format used `.toFixed(2)`.
+
+## Solution: `PLOT_MARGIN`
+
+A margin object defines a buffer zone around the inner plot area:
+
+```js
+const PLOT_MARGIN = { left: 58, right: 58, top: 38, bottom: 40 };
+```
+
+The inner plot area is where data gets drawn:
+
+```js
+function innerW() { return PLOT_W - PLOT_MARGIN.left - PLOT_MARGIN.right; }
+function innerH() { return PLOT_H - PLOT_MARGIN.top - PLOT_MARGIN.bottom; }
+```
+
+### Coordinate mapping
+
+`mapX`/`mapY` were replaced by `pxX`/`pxY` which map data values to pixel positions within the inner plot area:
+
+```
+pxX(val, min, max) = PLOT_MARGIN.left + innerW() * (val - min) / (max - min)
+pxY(val, min, max) = PLOT_MARGIN.top  + innerH() * (1 - (val - min) / (max - min))
+```
+
+If `min === max` (degenerate range), the coordinate is centered in the inner area.
+
+### What each element draws where
+
+| Element | Region | Detail |
+|---|---|---|
+| Grid lines | Inner area | `left…right`, `top…bottom` |
+| Data lines | Inner area | Clipped to `left ± 2`, `right ± 2`, etc. |
+| Tick marks | Just outside inner area | X ticks extend below `bottom`, Y ticks extend right of `right` |
+| Tick labels | Margins | X labels: `y = bottom + 7`, Y labels: `x = right + 9` |
+| Axis names | Margins | X axis name: bottom-right corner, Y axis name: above top margin |
+| Plot border | Around inner area | `strokeRect(left, top, innerW, innerH)` |
+| Legend (energy) | Top-left of inner area | Anchored at `(left + 6, top + 6)` |
+
+### `textBaseline` and `textAlign` usage
+
+Each label block sets both properties explicitly to avoid canvas state bleed:
+
+- X tick labels: `textAlign: 'center'`, `textBaseline: 'top'`
+- Y tick labels: `textAlign: 'left'`, `textBaseline: 'middle'`
+- Axis names: `textAlign: 'left'`, `textBaseline: 'alphabetic'` / `'top'`
+
+## Floating-Point Label Cleanup
+
+- All Y-axis format strings changed from `.toFixed(2)` to `.toFixed(1)` (max 1 decimal place)
+- Phase portrait ω₁: `123.5` instead of `123.45`
+- Energy values: `29.7` instead of `29.65`
+- Added `niceNum()` helper (not yet used for tick interval snapping, but available for future refinement)
+
