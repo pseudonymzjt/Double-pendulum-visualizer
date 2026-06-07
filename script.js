@@ -716,6 +716,7 @@ function renderPhasePortrait() {
     const Y = data.map(d => d.omegas[0]);
     const pi = Math.PI;
     const xRange = { min: -pi, max: pi };  // fixed range -π → π
+    const yRange = dataRange(Y);
 
     drawPlotGrid(ctx);
     // Zero axes (θ=0 vertical, ω₁=0 horizontal)
