@@ -706,34 +706,39 @@ function renderPhasePortrait() {
     const ctx = canvas.getContext('2d');
     setupPlotCanvas(canvas, ctx);
 
-    // Normalise θ₁ to [0, 2π) for consistent 0°–360° view
+    // Normalise θ₁ to [-π, π) for consistent -180°–180° view
     const twoPi = 2 * Math.PI;
-    const norm = v => ((v % twoPi) + twoPi) % twoPi;
+    const norm = v => {
+        const w = ((v % twoPi) + twoPi) % twoPi;
+        return w > Math.PI ? w - twoPi : w;
+    };
     const X = data.map(d => norm(d.thetas[0]));
     const Y = data.map(d => d.omegas[0]);
-    const xRange = { min: 0, max: twoPi };   // fixed range 0 → 2π
-    const yRange = dataRange(Y);
+    const pi = Math.PI;
+    const xRange = { min: -pi, max: pi };  // fixed range -π → π
 
     drawPlotGrid(ctx);
-    // Don't draw zero axes — fixed 0–2π range means zero line is always the left edge
-    // But ω₁=0 line is useful
+    // Zero axes (θ=0 vertical, ω₁=0 horizontal)
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 1.2;
+    const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
+    const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
+    // θ=0 vertical
+    const x0 = pxX(0, xRange.min, xRange.max);
+    ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, bot); ctx.stroke();
+    // ω₁=0 horizontal
     if (yRange.min < 0 && yRange.max > 0) {
         const y0 = pxY(0, yRange.min, yRange.max);
-        const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
         ctx.beginPath(); ctx.moveTo(left, y0); ctx.lineTo(right, y0); ctx.stroke();
     }
 
-    // Tick labels in degrees, fixed 0–360 range
-    drawTickLabels(ctx, 0, 360, yRange.min, yRange.max,
+    // Tick labels in degrees, fixed -180–180 range
+    drawTickLabels(ctx, -180, 180, yRange.min, yRange.max,
         'θ₁(°)', 'ω₁', v => v.toFixed(0) + '°', v => v.toFixed(1));
     drawFadingLine(ctx, data, xRange.min, xRange.max, yRange.min, yRange.max,
         d => norm(d.thetas[0]), d => d.omegas[0], p.color2);
 
-    // Plot border around inner area
-    const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
-    const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
+    // Plot border around inner area (left/right/top/bot already declared above)
     ctx.strokeStyle = 'rgba(255,255,255,0.25)';
     ctx.lineWidth = 1;
     ctx.strokeRect(left - 0.5, top - 0.5, right - left + 1, bot - top + 1);
@@ -900,7 +905,8 @@ function updateAngleDisplay() {
 
         const parts = [];
         for (let i = 0; i < p.N; i++) {
-            const deg = ((p.thetas[i] * 180 / Math.PI) % 360 + 360) % 360;
+            const raw = (p.thetas[i] * 180 / Math.PI) % 360;
+            const deg = raw > 180 ? raw - 360 : raw < -180 ? raw + 360 : raw;
             parts.push(`θ${String.fromCharCode(0x2080 + i + 1)} ${deg.toFixed(1)}°`);
         }
         const marker = idx === selectedPendulum ? '▸' : '●';
