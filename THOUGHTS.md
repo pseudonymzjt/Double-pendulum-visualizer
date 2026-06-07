@@ -825,3 +825,77 @@ const xRange = { min: first.step, max: last.step };
 ```
 Since the buffer always contains `[step_N−299, …, step_N]`, the range slides forward by 1 every frame, so the X-axis labels change continuously. Reset to 0 when metrics are cleared.
 
+---
+
+# Stage 9 — Mobile & Responsive Optimization
+
+## Motivation
+
+The app was designed on a large desktop monitor. On phones:
+- The controls bar overflowed or became too dense.
+- The params panel (gravity/damping/speed sliders) ate up precious vertical space.
+- Dragging bobs with touch could trigger page scrolling instead of moving the pendulum.
+- The 1200-point trail buffer created needless GPU work on mobile.
+
+## Changes
+
+### Touch Event Hardening
+
+**Problem**: The existing touch handlers used `{ passive: true }`, which means the browser treats them as passive listeners — `preventDefault()` would be ignored. On iOS Safari especially, even with `overflow: hidden` on `<body>`, the page can still rubber-band when the user tries to drag a bob.
+
+**Fix**:
+- Changed both `touchstart` and `touchmove` listeners to `{ passive: false }`.
+- Called `e.preventDefault()` inside both handlers only when a drag is active (`dragActive === true`). This suppresses page bounce without interfering with non-drag touches.
+- Added `touch-action: none` on both canvases via CSS — this tells the browser at the compositor level never to intercept touch gestures for scrolling/zooming on the canvas elements.
+- Added `overscroll-behavior: none` on `html, body` to further prevent the elastic bounce effect on all browsers.
+
+### Performance — Trail Length Capping
+
+**Problem**: `TRAIL_LENGTH = 1200` means each particle stores 1200 `{x, y, s}` objects. With N pendulums each having 2–5 particles, that's thousands of points redrawn every frame in 80 batches. On a mobile GPU this can cause frame drops.
+
+**Fix**:
+- Detect mobile via `window.matchMedia("(max-width: 768px)").matches`.
+- Set `TRAIL_LENGTH` to 600 on mobile (half the points, half the draw calls).
+- Changed from `const` to `let` so the value could adapt on orientation change (not currently done, but possible without a refactor).
+
+### Responsive CSS Layout
+
+**Problem**: The UI was rigid. Fixed-width elements like the 330px plot boxes, the 160px-min-width params panel, and the generous 12px gap in the controls bar assumed a ≥1024px viewport.
+
+**Fix**: A single `@media (max-width: 768px)` block handles all mobile adjustments:
+
+| Element | Desktop | Mobile |
+|---|---|---|
+| Controls gap | 12px | 6px |
+| Controls button font | 12px | 9px |
+| Angle display font | 11px | 9px |
+| Params panel | `display: flex` (always visible) | `display: none` (toggled by gear) |
+| Params position | top-right | bottom-right (above controls) |
+| Plot boxes | side-by-side corners | stacked centered (top 35% / bottom 35%) |
+| Plot box sizing | fixed 330×240 px | 90% width, auto height |
+| ctx-menu bottom | 105px | 80px |
+
+### Collapsible Settings Panel
+
+**Problem**: The gravity/damping/speed sliders are useful but take up too much screen on a phone. They shouldn't be completely removed — just hidden until needed.
+
+**Fix**:
+- Added a `⚙` gear button to the controls bar (last button, after Clear Trail).
+- The gear button is hidden on desktop via `#btn-gear { display: none }`.
+- On mobile, `#btn-gear { display: inline-block !important }` via the media query override.
+- Clicking the gear calls `toggleSettingsPanel()`, which toggles `.show` on `#params-panel`.
+- On mobile, the params panel sits at `bottom: 55px` (just above the controls) and floats to the right.
+
+## Files Changed
+
+- **Plan.md**: New Stage 9 section with tasks and acceptance criteria.
+- **style.css**: `touch-action:none` on canvases, `overscroll-behavior:none` on root, full `@media (max-width: 768px)` block, gear button display rule.
+- **index.html**: Gear button in controls bar.
+- **script.js**: `isMobile` detection, mutable `TRAIL_LENGTH`, `{ passive: false }` on touch handlers with `preventDefault()`, `toggleSettingsPanel()` function, gear button event listener.
+
+## Acceptance Criteria Status
+- ✅ Pendulum bobs draggable on touch devices without page scrolling or bouncing.
+- ✅ Trail rendering capped at 600 points on mobile, 1200 on desktop.
+- ✅ UI usable on 375px-wide phone screens without overlap.
+- ✅ Params panel togglable via gear icon on mobile; always visible on desktop.
+- ✅ Canvas and rod lengths scale proportionally to viewport (existing `pxPerUnit` system).
