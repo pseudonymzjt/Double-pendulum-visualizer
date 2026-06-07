@@ -8,6 +8,7 @@ html, body {
     width: 100%;
     height: 100%;
     overflow: hidden;
+    overscroll-behavior: none;
     background: #0a0a0f;
 }
 
@@ -18,6 +19,7 @@ html, body {
     left: 0;
     width: 100%;
     height: 100%;
+    touch-action: none;
 }
 
 #canvas-b {
@@ -308,4 +310,103 @@ html, body {
     min-height: 0;
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.35);
+}
+
+/* --- Responsive: mobile / small screens --- */
+
+@media (max-width: 768px) {
+
+    /* Controls — tighter packing */
+    #controls {
+        gap: 6px;
+        padding: 4px 8px;
+        bottom: 12px;
+    }
+    #controls button {
+        font-size: 9px;
+        padding: 1px 3px;
+    }
+    #controls button:first-child {
+        font-size: 13px;
+    }
+
+    /* Angle display — smaller */
+    #angle-display {
+        font-size: 9px;
+        padding: 3px 4px;
+        max-height: calc(100vh - 80px);
+    }
+    .pend-entry {
+        padding: 1px 4px;
+    }
+
+    /* Params panel — hidden by default on mobile, toggled by gear */
+    #params-panel {
+        display: none;
+        top: auto;
+        bottom: 55px;
+        right: 10px;
+        min-width: 140px;
+        padding: 6px 8px;
+    }
+    #params-panel.show {
+        display: flex;
+    }
+    .param-row label {
+        width: 40px;
+        font-size: 9px;
+    }
+    .param-value {
+        width: 38px;
+        font-size: 9px;
+    }
+    .param-row input[type="range"] {
+        min-width: 40px;
+    }
+
+    /* Gear button visible only on mobile */
+    #btn-gear {
+        display: inline-block !important;
+    }
+
+    /* ctx-menu sits higher on small screens */
+    #ctx-menu {
+        bottom: 80px;
+    }
+
+    /* Metrics plots — stack centered on mobile */
+    #metrics-panel .plot-box:nth-child(1) {
+        left: 5%;
+        right: 5%;
+        bottom: auto;
+        top: 8%;
+        width: auto;
+        height: 35%;
+    }
+    #metrics-panel .plot-box:nth-child(2) {
+        left: 5%;
+        right: 5%;
+        bottom: 10%;
+        top: auto;
+        width: auto;
+        height: 35%;
+    }
+
+    /* Zoomed plots — leave slim margin all around */
+    #metrics-panel.zoom-phase .plot-box:nth-child(1),
+    #metrics-panel.zoom-energy .plot-box:nth-child(2) {
+        left: 3%;
+        right: 3%;
+        top: 3%;
+        bottom: 8%;
+    }
+
+    .plot-title {
+        font-size: 8px;
+    }
+}
+
+/* Gear button hidden on desktop by default */
+#btn-gear {
+    display: none;
 }

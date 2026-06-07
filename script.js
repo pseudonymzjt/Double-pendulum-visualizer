@@ -9,7 +9,9 @@ let DAMPING = 0.0003;            // per-frame velocity damping (fraction)
 let speedMultiplier = 1.0;       // physics speed multiplier (0.2–3.0)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
 const SUB_STEPS = 4;             // RK4 sub-steps per frame
-const TRAIL_LENGTH = 1200;       // max trail points (~20 s at 60 fps)
+// Trail length — capped lower on mobile for performance
+const isMobile = window.matchMedia("(max-width: 768px)").matches;
+let TRAIL_LENGTH = isMobile ? 600 : 1200;  // max trail points
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians
 const SNAP_DEG = 15;
@@ -816,6 +818,11 @@ function toggleMetricsPanel() {
     }
 }
 
+/** Toggle the settings (params) panel — used on mobile where it starts hidden. */
+function toggleSettingsPanel() {
+    document.getElementById('params-panel').classList.toggle('show');
+}
+
 /** Click a plot to zoom it full-screen; click again to shrink back. */
 function togglePlotZoom(plotId) {
     if (zoomedPlotId === plotId) {
@@ -997,6 +1004,7 @@ document.getElementById('param-speed').addEventListener('input', (e) => {
 });
 document.getElementById('btn-add').addEventListener('click', addPendulum);
 document.getElementById('btn-metrics').addEventListener('click', toggleMetricsPanel);
+document.getElementById('btn-gear').addEventListener('click', toggleSettingsPanel);
 
 // Click-to-zoom on plot canvases (only when panel is visible)
 document.getElementById('plot-phase').addEventListener('click', (e) => {
@@ -1224,28 +1232,30 @@ canvasB.addEventListener('mouseleave', () => {
     }
 });
 
-// Touch support
+// Touch support — passive:false so preventDefault() suppresses page bounce
 canvasB.addEventListener('touchstart', (e) => {
     if (!paused) return;
     const touch = e.touches[0];
     const rect = canvasB.getBoundingClientRect();
     const hit = hitTestBob(touch.clientX - rect.left, touch.clientY - rect.top);
     if (hit) {
+        e.preventDefault();
         selectPendulum(hit.idx);
         dragTarget = hit.particle;
         dragActive = true;
     } else {
         selectPendulum(null);
     }
-}, { passive: true });
+}, { passive: false });
 
 canvasB.addEventListener('touchmove', (e) => {
     if (!dragActive || !paused || selectedPendulum === null) return;
+    e.preventDefault();
     const touch = e.touches[0];
     const rect = canvasB.getBoundingClientRect();
     dragParticle(pendulums[selectedPendulum], dragTarget,
         touch.clientX - rect.left, touch.clientY - rect.top);
-}, { passive: true });
+}, { passive: false });
 
 canvasB.addEventListener('touchend', () => {
     dragActive = false;

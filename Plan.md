@@ -199,3 +199,42 @@ Provide users with real-time mathematical insight into the chaotic system by plo
 * The Phase Space plot and Energy-Time plots render in real-time, matching the movement of the pendulums without causing any UI lag.
 * The Total Energy line remains visibly flat and stable, validating the mathematical integrity of the simulation.
 * No external libraries (like Chart.js or D3) are loaded. All grids, lines, and text are drawn via native HTML5 Canvas 2D contexts.
+
+---
+
+## Stage 9 — Mobile & Responsive Optimization
+
+### Objective
+Make the visualizer fully usable on phones, tablets, and desktops with a single codebase — no external frameworks, no touch libraries.
+
+### Tasks
+
+1. **Touch Event Hardening**:
+   - Set `touch-action: none` on both canvases so the browser never intercepts touch gestures for scrolling/zooming.
+   - Change touch event listeners from `{ passive: true }` to `{ passive: false }` so `preventDefault()` works during drag to suppress page bounce.
+   - Add `overscroll-behavior: none` to the document root.
+
+2. **Performance Tuning for Mobile**:
+   - Detect mobile via `window.matchMedia("(max-width: 768px)")`.
+   - On mobile, reduce trail length from 1200 to 600 points (cuts rendering work in half).
+   - The trail length variable is mutable so it can change dynamically on resize across breakpoints.
+
+3. **Responsive CSS Layout**:
+   - Add `@media (max-width: 768px)` rules:
+     - Smaller angle-display font (9px), tighter padding.
+     - Params panel collapses (hidden by default) — activated by a gear icon in the controls bar.
+     - Compact control bar buttons (smaller gap, tighter padding).
+     - Metrics plot boxes switch to stacked centered layout instead of left/right corners.
+     - ctx-menu and controls adapt their bottom offset to avoid overlap.
+
+4. **Collapsible Settings (Gear Toggle)**:
+   - A `⚙` button in the controls bar toggles the params panel on mobile.
+   - On desktop, the params panel is always visible (unchanged).
+   - The gear button is hidden on desktop via `@media` rule.
+
+### Acceptance Criteria
+- ✅ Pendulum bobs can be dragged on touch devices without page scrolling or bouncing.
+- ✅ Trail rendering doesn't drop frames on mobile even after 2+ minutes of simulation.
+- ✅ The UI is usable on a 375px-wide phone screen without overlapping elements.
+- ✅ The params panel can be toggled via a gear icon on mobile; always visible on desktop.
+- ✅ Canvas and rod lengths scale proportionally to the viewport on orientation change.
