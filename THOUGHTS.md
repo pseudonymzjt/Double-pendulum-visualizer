@@ -1006,3 +1006,62 @@ The user explicitly requested the limit be set at 8–9, not 4. While the RK4 an
 
 - **script.js**: Added `MAX_LINKS`, `MAX_PENDULUMS` constants. Bumped `SUB_STEPS` 4→8. Added `isPendulumInvalid()`, `safeResetPendulum()`. Integrated NaN check in `stepPhysics()`. Guarded `addPendulum()`, `addJoint()`, `toggleChaos()`. Updated `updateControls()` for button disable/hide logic. Added 4 I18N keys.
 - **style.css**: Added `#controls button:disabled` rule.
+
+---
+
+# Post-Stage Fixes — CSS Specificity & In-App Wiki Reader
+
+## Fix 1: Fenced Code Blocks Rendered as Single Line
+
+**Report**: Viewing the full README inside the Guide modal showed the Architecture directory tree as a single line instead of preserving line breaks in the fenced code block.
+
+**Root cause**: `#help-modal-content code { white-space: nowrap }` at line 527 in `style.css`. This ID-based rule (specificity 1,0,0,1) applied to ALL `<code>` elements in the modal, including those inside `<pre>` blocks in the rendered README content. The class-based `.help-readme-body pre code { white-space: pre }` rule (specificity 0,2,0,2) was overridden because the ID selector has higher weight — CSS specificity means `#id` beats `.class` regardless of source order.
+
+**Why reordering didn't help**: Moving the `.help-readme-body pre code` rule after `.help-readme-body code` in the stylesheet doesn't matter when the former is outmatched by an ID selector. CSS specificity is a priority system, not a proximity system.
+
+**Fix**: Added the parent ID to the `pre code` selector to match the specificity:
+```css
+.help-readme-body pre code,
+#help-modal-content .help-readme-body pre code {
+    white-space: pre;
+    /* … */
+}
+```
+`#help-modal-content .help-readme-body pre code` has specificity 1,1,2,1 — it wins over the base `#help-modal-content code` (1,0,0,1).
+
+**Scope**: Applied automatically to all fenced code blocks rendered inside any `.help-readme-body`, including `AI_DISCLOSURE.md`/`AI_DISCLOSURE_ZH.md` collaboration workflow sections.
+
+## Fix 2: In-App Wiki Reader — Intercept Markdown Links
+
+**Report**: The `README.md` contains relative links to other `.md` files (e.g., `AI_DISCLOSURE.md`). Clicking these inside the Guide modal caused default browser navigation (404 or file download), breaking the in-app reading experience.
+
+### Solution: Wiki Navigation
+
+Three changes turned the Guide modal into a recursive wiki reader:
+
+**a. Generalized `loadAndRenderMD(path)`** — replaces the previous `fetchAndShowReadme()` (which was hardcoded to `./README.md`). The new function:
+- Accepts any `.md` relative path, fetches it via `fetch()`, parses it with the existing `parseSimpleMarkdown()`, and renders the HTML into `#help-body`.
+- Tracks the current document in `currentDocPath`.
+- Automatically prepends a back-navigation bar: "← Back to Controls" when on the root README, or "← Back to Guide Index" when on a sub-page.
+
+**b. `bindMarkdownLinks()`** — called after every render. Scans all `<a>` tags inside `.help-readme-body` and attaches click handlers to any whose `href` ends with `.md`. The handler calls `e.preventDefault()` and `loadAndRenderMD(href)`, loading the linked document in-app.
+
+**c. Link rendering** — `processInline()` now distinguishes `.md` links from external links. `.md` links are rendered without `target="_blank"` (since they navigate internally); all other links keep `target="_blank"` for safety.
+
+### Navigation flow
+```
+Controls (table) → click "View Full Guide →" → README.md
+     ↑                                                ↓
+  "← Back to Controls"                    click [AI Disclosure] link
+     ↑                                                ↓
+     └──────────── README.md ◄── "← Back to Guide Index" ── AI_DISCLOSURE.md
+```
+
+### Files changed
+- **script.js**: ~70 lines changed. Added `currentDocPath` tracking, `loadAndRenderMD()`, `bindMarkdownLinks()`, conditional `target="_blank"` in `processInline()`, `.help-back-guide` handler in event delegation. Two new i18n keys for both EN and ZH.
+- **style.css**: `.help-back-guide` shares styling with `.help-back-btn`.
+
+### Edge cases
+- Links already on a sub-page (e.g., `AI_DISCLOSURE.md` → `AI_DISCLOSURE_ZH.md`) are recursively intercepted — the chain works to arbitrary depth.
+- Loading errors show an error message; the modal returns to overview on re-open.
+- Language switch resets to the controls overview (no persisted state across modal toggles).

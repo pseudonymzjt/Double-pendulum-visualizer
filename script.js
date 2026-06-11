@@ -79,6 +79,7 @@ const I18N = {
             ],
             footer: 'View Full Guide →',
             backBtn: '← Back to Controls',
+            guideIndex: '← Back to Guide Index',
             loading: 'Loading README…',
             error: 'Failed to load document.',
         },
@@ -133,11 +134,15 @@ const I18N = {
             ],
             footer: '查看完整指南 →',
             backBtn: '← 返回操作说明',
+            guideIndex: '← 返回指南',
             loading: '正在加载 README…',
             error: '文档加载失败。',
         },
     },
 };
+
+/** Track the currently loaded doc path for wiki-like in-app navigation. */
+let currentDocPath = null;
 
 /** Build help modal HTML for the current language. */
 function buildHelpHTML() {
@@ -282,8 +287,11 @@ function processInline(text) {
         .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
         // Bold
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        // Links
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+        // Links — internal .md links open in-app, external links get target=_blank
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
+            if (/\.md$/i.test(href)) return `<a href="${href}">${text}</a>`;
+            return `<a href="${href}" target="_blank">${text}</a>`;
+        });
     return t;
 }
 
@@ -354,34 +362,65 @@ function toggleLanguage() {
 
 /** Show the controls overview in the help modal. */
 function showHelpOverview() {
+    currentDocPath = null;
     const body = document.getElementById('help-body');
     if (body) body.innerHTML = buildHelpHTML();
 }
 
-/** Fetch the README file for the current language and render it. */
-function fetchAndShowReadme() {
-    const filename = currentLang === 'en' ? './README.md' : './README_ZH.md';
+/**
+ * Fetch any .md file, parse it, render it in the modal body, and bind
+ * internal wiki links so they load in-app instead of navigating away.
+ */
+function loadAndRenderMD(path) {
+    currentDocPath = path;
     const body = document.getElementById('help-body');
     if (!body) return;
     body.innerHTML = `<p class="help-loading">${I18N[currentLang].loading}</p>`;
 
-    fetch(filename)
+    fetch(path)
         .then(r => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.text();
         })
         .then(md => {
             const html = parseSimpleMarkdown(md);
-            const back = I18N[currentLang].backBtn;
-            body.innerHTML = `<div class="help-back-bar"><span class="help-back-btn">${back}</span></div>
-                <div class="help-readme-body">${html}</div>`;
+            const isRoot = path === './README.md' || path === './README_ZH.md';
+            const L = I18N[currentLang];
+            const topBar = isRoot
+                ? `<div class="help-back-bar"><span class="help-back-btn">${L.backBtn}</span></div>`
+                : `<div class="help-back-bar"><span class="help-back-guide">${L.guideIndex}</span></div>`;
+            body.innerHTML = topBar + `<div class="help-readme-body">${html}</div>`;
+            bindMarkdownLinks(body);
         })
         .catch(err => {
-            console.error('fetchAndShowReadme:', err);
+            console.error('loadAndRenderMD:', err);
             const L = I18N[currentLang];
-            body.innerHTML = `<p class="help-error">${L.error}</p>
-                <p class="help-footer"><span class="help-back-btn">${L.backBtn}</span></p>`;
+            body.innerHTML = `<p class="help-loading help-error">${L.error}</p>`;
         });
+}
+
+/**
+ * Scan the rendered README body for all anchor tags pointing to .md files
+ * and intercept their clicks to load in-app instead of browser navigation.
+ */
+function bindMarkdownLinks(container) {
+    const readmeBody = container.querySelector('.help-readme-body');
+    if (!readmeBody) return;
+    readmeBody.querySelectorAll('a').forEach(a => {
+        const href = a.getAttribute('href');
+        if (href && /\.md$/i.test(href)) {
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                loadAndRenderMD(href);
+            });
+        }
+    });
+}
+
+/** Fetch the README file for the current language and render it. */
+function fetchAndShowReadme() {
+    const filename = currentLang === 'en' ? './README.md' : './README_ZH.md';
+    loadAndRenderMD(filename);
 }
 
 /**
@@ -1424,6 +1463,13 @@ on('help-body', 'click', (e) => {
     if (guideLink) { e.preventDefault(); fetchAndShowReadme(); return; }
     const backBtn = e.target.closest('.help-back-btn');
     if (backBtn) { e.preventDefault(); showHelpOverview(); return; }
+    const backGuide = e.target.closest('.help-back-guide');
+    if (backGuide) {
+        e.preventDefault();
+        const rootPath = currentLang === 'en' ? './README.md' : './README_ZH.md';
+        loadAndRenderMD(rootPath);
+        return;
+    }
 });
 
 // Apply language on load (so all button texts are set)

@@ -632,13 +632,15 @@ html, body {
     padding-bottom: 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
-.help-back-btn {
+.help-back-btn,
+.help-back-guide {
     color: rgba(255, 255, 255, 0.5);
     cursor: pointer;
     font-size: 13px;
     transition: color 0.15s;
 }
-.help-back-btn:hover {
+.help-back-btn:hover,
+.help-back-guide:hover {
     color: rgba(255, 255, 255, 0.85);
     text-decoration: underline;
 }

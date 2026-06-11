@@ -935,3 +935,62 @@ const xRange = { min: first.step, max: last.step };
   - `on(id, event, handler)` — 安全地绑定事件监听器。如果 `$(id)` 返回 `null`，则静默跳过。
 - 将所有 18 处 `document.getElementById(id).addEventListener(event, handler)` 调用转换为 `on(id, event, handler)`。
 - 保留 `window`、`document` 和 `canvasB` 的监听器不变（这些 DOM 节点始终存在）。
+
+---
+
+# 后期修复 — CSS 优先级冲突与应用内 Wiki 阅读器
+
+## 修复 1：围栏代码块显示为一行
+
+**报告**：在指南弹窗中查看完整 README 时，架构部分的目录树结构显示为单行，围栏代码块中的换行符未保留。
+
+**根本原因**：`style.css` 中第 527 行的 `#help-modal-content code { white-space: nowrap }`。这个基于 ID 的选择器（优先级 1,0,0,1）适用于弹窗中**所有** `<code>` 元素，包括渲染后的 README 内容中 `<pre>` 块内部的代码。基于类的 `.help-readme-body pre code { white-space: pre }` 规则（优先级 0,2,0,2）被覆盖，因为 ID 选择器权重更高——CSS 优先级意味着 `#id` 无论顺序如何都高于 `.class`。
+
+**为何重排序无效**：将 `.help-readme-body pre code` 规则移到 `.help-readme-body code` 之后在样式表中没有帮助，因为前者被 ID 选择器击败。CSS 优先级是一个权重系统，而非顺序系统。
+
+**修复**：在 `pre code` 选择器中添加父级 ID 以匹配优先级：
+```css
+.help-readme-body pre code,
+#help-modal-content .help-readme-body pre code {
+    white-space: pre;
+    /* … */
+}
+```
+`#help-modal-content .help-readme-body pre code` 的优先级为 1,1,2,1——它胜过了基础的 `#help-modal-content code`（1,0,0,1）。
+
+**影响范围**：自动应用于任何 `.help-readme-body` 内渲染的所有围栏代码块，包括 `AI_DISCLOSURE.md`/`AI_DISCLOSURE_ZH.md` 中的协作工作流章节。
+
+## 修复 2：应用内 Wiki 阅读器 — 拦截 Markdown 链接
+
+**报告**：`README.md` 包含指向其他 `.md` 文件的相对链接（如 `AI_DISCLOSURE.md`）。在指南弹窗中点击这些链接会触发默认浏览器导航（404 或文件下载），破坏了应用内阅读体验。
+
+### 解决方案：Wiki 导航
+
+三项更改将指南弹窗转变为递归 wiki 阅读器：
+
+**a. 通用化的 `loadAndRenderMD(path)`** — 替换了之前硬编码为 `./README.md` 的 `fetchAndShowReadme()`。新函数：
+- 接受任意 `.md` 相对路径，通过 `fetch()` 获取，使用现有的 `parseSimpleMarkdown()` 解析，并将 HTML 渲染到 `#help-body` 中。
+- 在 `currentDocPath` 中跟踪当前文档。
+- 自动前置返回导航栏：根 README 显示"← 返回操作说明"，子页面显示"← 返回指南"。
+
+**b. `bindMarkdownLinks()`** — 每次渲染后调用。扫描 `.help-readme-body` 内的所有 `<a>` 标签，为任何 `href` 以 `.md` 结尾的链接附加点击处理程序。处理程序调用 `e.preventDefault()` 和 `loadAndRenderMD(href)`，在应用内加载链接文档。
+
+**c. 链接渲染** — `processInline()` 现在区分 `.md` 链接和外部链接。`.md` 链接渲染时不加 `target="_blank"`（因为它们在内部导航）；所有其他链接保留 `target="_blank"` 以确保安全。
+
+### 导航流程
+```
+控制表 → 点击"查看完整指南 →" → README.md
+     ↑                                  ↓
+  "← 返回操作说明"           点击 [AI 公开声明] 链接
+     ↑                                  ↓
+     └────────── README.md ◄── "← 返回指南" ── AI_DISCLOSURE.md
+```
+
+### 变更文件
+- **script.js**：约 70 行变更。添加了 `currentDocPath` 跟踪、`loadAndRenderMD()`、`bindMarkdownLinks()`、`processInline()` 中的条件 `target="_blank"`、事件委托中的 `.help-back-guide` 处理程序。中英文各两个新的 i18n 键。
+- **style.css**：`.help-back-guide` 与 `.help-back-btn` 共享样式。
+
+### 边界情况
+- 子页面上的链接（如 `AI_DISCLOSURE.md` → `AI_DISCLOSURE_ZH.md`）会被递归拦截——链接链可工作到任意深度。
+- 加载错误显示错误消息；重新打开弹窗时返回控制总览。
+- 语言切换重置为控制总览（弹窗切换间不持久化状态）。
