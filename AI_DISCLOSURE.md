@@ -147,9 +147,8 @@ This project is a genuine human-AI collaboration: the human provided domain know
 
 Copy the following badge and link into your `README.md` to reference this disclosure:
 
-```markdown
 [![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
-```
+
 
 Recommended placement: at the end of your project description section, before the feature list or installation instructions.
 
@@ -160,5 +159,7 @@ Example:
 
 An N-pendulum chaotic simulation with real-time phase analysis.
 
-[![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
 ```
+
+[![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
+
