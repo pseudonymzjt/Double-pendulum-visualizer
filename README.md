@@ -35,6 +35,10 @@ A high-performance, minimalist HTML5 Canvas web application that visualises the 
 | `⏱ ½× Slow` / `⏱ 1× Speed` | — | Toggle slow-motion |
 | `⬇ Save` | — | Export PNG |
 
+### Language Toggle
+
+Click `中` / `EN` in the bottom control bar to switch between English and Simplified Chinese UI. The button text, control labels, plot titles, and help modal all update in real time.
+
 ### Contextual Menu (when a pendulum is selected)
 
 | Button | Action |

@@ -22,6 +22,150 @@ const PENDULUM_VIEWPORT_FRACTION = 0.18;  // fraction of min viewport dimension
 const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
 let globalMetricsStep = 0;       // monotonically increasing step counter for X-axis
 
+// --- I18N / Locale ------------------------------------------------
+
+let currentLang = 'en';
+
+const I18N = {
+    en: {
+        playPaused:  '⏸ Pause [Space]',
+        playPlaying: '▶ Play [Space]',
+        chaosChaos:  '⚡ Chaos [C]',
+        chaosSingle: '⚡ Single [C]',
+        reset:  '↺ Reset [R]',
+        metrics:'📊 Metrics [M]',
+        clear:  '✕ Clear Trail',
+        save:   '⬇ Save',
+        guide:  '📖 Guide',
+        langBtn:'中',
+        langTip:'切换到中文',
+        phaseTitle: (pid) => `Phase Space — Pendulum ${pid}  θ vs ω     cycle`,
+        energyTitle: 'Energy — KE / PE / E_total',
+        settingsTitle: 'Settings',
+        addTitle: 'Add pendulum',
+        help: {
+            title: 'Controls',
+            th: ['Button', 'Keyboard', 'Action'],
+            rows: [
+                ['<code>+</code>', '—', 'Add a new pendulum'],
+                ['<code>⏸ Pause</code> / <code>▶ Play</code>', '<kbd>Space</kbd>', 'Freeze / resume simulation'],
+                ['<code>↺ Reset</code>', '<kbd>R</kbd>', 'Reset to initial state'],
+                ['<code>⚡ Chaos</code> / <code>⚡ Single</code>', '<kbd>C</kbd>', 'Toggle chaos mode'],
+                ['<code>📊 Metrics</code>', '<kbd>M</kbd>', 'Toggle energy &amp; phase plots'],
+                ['<code>✕ Clear Trail</code>', '—', 'Erase all trails'],
+                ['<code>⬇ Save</code>', '—', 'Export PNG artwork'],
+            ],
+            ctxTitle: 'Context Menu',
+            ctxSub: '(when a pendulum is selected)',
+            ctxTH: ['Button', 'Action'],
+            ctxRows: [
+                ['<span class="icon-cell">🎨</span>', 'Cycle to next palette colour'],
+                ['<span class="icon-cell">👁</span> / <span class="icon-cell">👁‍🗨</span>', 'Show / hide this pendulum'],
+                ['<span class="icon-cell">➕</span>', 'Add a joint (extend chain)'],
+                ['<span class="icon-cell">➖</span>', 'Remove last joint'],
+                ['<span class="icon-cell">🗑</span>', 'Delete this pendulum'],
+            ],
+            tipsTitle: 'Tips',
+            tips: [
+                '<strong>Pause</strong> then <strong>drag</strong> any bob to set angles freely — snap aligns to 15° increments.',
+                'Press <kbd>[</kbd> / <kbd>]</kbd> while the <strong>Metrics</strong> panel is open to cycle through pendulums.',
+                'Click a <strong>plot</strong> to zoom it full-screen; click again to shrink back.',
+                'Use the <strong>Gravity</strong>, <strong>Damping</strong>, and <strong>Speed</strong> sliders (top-right) to tweak the simulation.',
+            ],
+            footer: 'Full documentation: <a href="README.md" target="_blank">README.md</a>',
+        },
+    },
+    zh: {
+        playPaused:  '⏸ 暂停 [Space]',
+        playPlaying: '▶ 播放 [Space]',
+        chaosChaos:  '⚡ 混沌 [C]',
+        chaosSingle: '⚡ 单摆 [C]',
+        reset:  '↺ 重置 [R]',
+        metrics:'📊 图表 [M]',
+        clear:  '✕ 清除轨迹',
+        save:   '⬇ 保存',
+        guide:  '📖 指南',
+        langBtn:'EN',
+        langTip:'Switch to English',
+        phaseTitle: (pid) => `相空间 — 摆 ${pid}  θ vs ω     周期`,
+        energyTitle: '能量 — 动能 / 势能 / 总能',
+        settingsTitle: '设置',
+        addTitle: '添加摆',
+        help: {
+            title: '操作说明',
+            th: ['按钮', '键盘', '动作'],
+            rows: [
+                ['<code>+</code>', '—', '添加新摆'],
+                ['<code>⏸ 暂停</code> / <code>▶ 播放</code>', '<kbd>Space</kbd>', '冻结 / 恢复模拟'],
+                ['<code>↺ 重置</code>', '<kbd>R</kbd>', '重置到初始状态'],
+                ['<code>⚡ 混沌</code> / <code>⚡ 单摆</code>', '<kbd>C</kbd>', '切换混沌模式'],
+                ['<code>📊 图表</code>', '<kbd>M</kbd>', '切换能量与相图面板'],
+                ['<code>✕ 清除轨迹</code>', '—', '擦除所有轨迹'],
+                ['<code>⬇ 保存</code>', '—', '导出 PNG 图片'],
+            ],
+            ctxTitle: '上下文菜单',
+            ctxSub: '（选中摆时显示）',
+            ctxTH: ['按钮', '动作'],
+            ctxRows: [
+                ['<span class="icon-cell">🎨</span>', '切换至下一个调色板颜色'],
+                ['<span class="icon-cell">👁</span> / <span class="icon-cell">👁‍🗨</span>', '显示 / 隐藏此摆'],
+                ['<span class="icon-cell">➕</span>', '添加关节（延长摆链）'],
+                ['<span class="icon-cell">➖</span>', '移除最后一个关节'],
+                ['<span class="icon-cell">🗑</span>', '删除此摆'],
+            ],
+            tipsTitle: '提示',
+            tips: [
+                '<strong>暂停</strong>后<strong>拖拽</strong>任意摆锤可自由设置角度——磁吸吸附至 15° 增量。',
+                '在<strong>图表</strong>面板打开时按 <kbd>[</kbd> / <kbd>]</kbd> 切换追踪的摆。',
+                '点击<strong>图表</strong>可全屏显示；再次点击恢复。',
+                '使用右上角的<strong>重力</strong>、<strong>阻尼</strong>和<strong>速度</strong>滑块调节模拟参数。',
+            ],
+            footer: '完整文档：<a href="README_ZH.md" target="_blank">README_ZH.md</a>',
+        },
+    },
+};
+
+/** Build help modal HTML for the current language. */
+function buildHelpHTML() {
+    const H = I18N[currentLang].help;
+    const rows = H.rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
+    const ctxRows = H.ctxRows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
+    const tips = H.tips.map(t => `<li>${t}</li>`).join('');
+    return `<h2>${H.title}</h2>
+<table><thead><tr>${H.th.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+<h3>${H.ctxTitle} <span class="subtitle">${H.ctxSub}</span></h3>
+<table><thead><tr>${H.ctxTH.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${ctxRows}</tbody></table>
+<h3>${H.tipsTitle}</h3><ul>${tips}</ul>
+<p class="help-footer">${H.footer}</p>`;
+}
+
+/** Apply the current language to all UI text. */
+function applyLanguage() {
+    const L = I18N[currentLang];
+    document.documentElement.lang = currentLang === 'en' ? 'en' : 'zh';
+    // Language toggle button
+    const langBtn = on('btn-lang');
+    if (langBtn) {
+        langBtn.textContent = L.langBtn;
+        langBtn.title = L.langTip;
+    }
+    // Plot titles
+    document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
+        .textContent = L.phaseTitle(0);
+    document.querySelector('#metrics-panel .plot-box:nth-child(2) .plot-title')
+        .textContent = L.energyTitle;
+    // Help modal content
+    const helpBody = document.getElementById('help-body');
+    if (helpBody) helpBody.innerHTML = buildHelpHTML();
+    updateControls();
+}
+
+/** Toggle UI language between English and Simplified Chinese. */
+function toggleLanguage() {
+    currentLang = currentLang === 'en' ? 'zh' : 'en';
+    applyLanguage();
+}
+
 /**
  * Dual-purpose helper:
  *   on('id')              — returns the element (like getElementById)
@@ -704,7 +848,7 @@ function renderPhasePortrait() {
     const idx = pendulums.indexOf(p || pendulums[0]);
     const pid = idx >= 0 ? idx : 0;
     document.querySelector('#metrics-panel .plot-box:nth-child(1) .plot-title')
-        .textContent = `Phase Space — Pendulum ${pid}  θ vs ω     cycle`;
+        .textContent = I18N[currentLang].phaseTitle(pid);
 
     if (!p || p.metrics.length < 2) return;
     const data = p.metrics;
@@ -953,8 +1097,16 @@ document.addEventListener('pointerdown', (e) => {
 });
 
 function updateControls() {
-    on('btn-play').textContent = paused ? '▶ Play [Space]' : '⏸ Pause [Space]';
-    on('btn-chaos').textContent = chaosMode ? '⚡ Single [C]' : '⚡ Chaos [C]';
+    const L = I18N[currentLang];
+    on('btn-play').textContent = paused ? L.playPlaying : L.playPaused;
+    on('btn-chaos').textContent = chaosMode ? L.chaosSingle : L.chaosChaos;
+    on('btn-reset').textContent = L.reset;
+    on('btn-metrics').textContent = L.metrics;
+    on('btn-clear').textContent = L.clear;
+    on('btn-save').textContent = L.save;
+    on('btn-help').textContent = L.guide;
+    on('btn-add').title = L.addTitle;
+    on('btn-gear').title = L.settingsTitle;
     const hasSel = selectedPendulum !== null && pendulums[selectedPendulum];
     on('ctx-menu').classList.toggle('show', !!hasSel);
     updateAngleDisplay();
@@ -1004,8 +1156,12 @@ on('param-speed', 'input', (e) => {
 on('btn-add', 'click', addPendulum);
 on('btn-metrics', 'click', toggleMetricsPanel);
 on('btn-gear', 'click', toggleSettingsPanel);
+on('btn-lang', 'click', toggleLanguage);
 on('btn-help', 'click', toggleHelpModal);
 on('help-close', 'click', toggleHelpModal);
+
+// Apply language on load (so all button texts are set)
+applyLanguage();
 
 // Close help modal on Escape key or click outside content
 document.addEventListener('keydown', (e) => {

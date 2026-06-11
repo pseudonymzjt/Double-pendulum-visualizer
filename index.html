@@ -18,6 +18,7 @@
         <button id="btn-clear">✕ Clear Trail</button>
         <button id="btn-gear" title="Settings">⚙</button>
         <button id="btn-help">📖 Guide</button>
+        <button id="btn-lang">中</button>
         <button id="btn-save">⬇ Save</button>
     </div>
     <div id="angle-display"></div>
@@ -58,41 +59,7 @@
     <div id="help-modal">
         <div id="help-modal-content">
             <button id="help-close">&times;</button>
-            <h2>Controls</h2>
-            <table>
-                <thead><tr><th>Button</th><th>Keyboard</th><th>Action</th></tr></thead>
-                <tbody>
-                    <tr><td><code>+</code></td><td>—</td><td>Add a new pendulum</td></tr>
-                    <tr><td><code>⏸ Pause</code> / <code>▶ Play</code></td><td><kbd>Space</kbd></td><td>Freeze / resume simulation</td></tr>
-                    <tr><td><code>↺ Reset</code></td><td><kbd>R</kbd></td><td>Reset to initial state</td></tr>
-                    <tr><td><code>⚡ Chaos</code> / <code>⚡ Single</code></td><td><kbd>C</kbd></td><td>Toggle chaos mode</td></tr>
-                    <tr><td><code>📊 Metrics</code></td><td><kbd>M</kbd></td><td>Toggle energy &amp; phase plots</td></tr>
-                    <tr><td><code>✕ Clear Trail</code></td><td>—</td><td>Erase all trails</td></tr>
-                    <tr><td><code>⬇ Save</code></td><td>—</td><td>Export PNG artwork</td></tr>
-                </tbody>
-            </table>
-
-            <h3>Context Menu <span class="subtitle">(when a pendulum is selected)</span></h3>
-            <table>
-                <thead><tr><th>Button</th><th>Action</th></tr></thead>
-                <tbody>
-                    <tr><td><span class="icon-cell">🎨</span></td><td>Cycle to next palette colour</td></tr>
-                    <tr><td><span class="icon-cell">👁</span> / <span class="icon-cell">👁‍🗨</span></td><td>Show / hide this pendulum</td></tr>
-                    <tr><td><span class="icon-cell">➕</span></td><td>Add a joint (extend chain)</td></tr>
-                    <tr><td><span class="icon-cell">➖</span></td><td>Remove last joint</td></tr>
-                    <tr><td><span class="icon-cell">🗑</span></td><td>Delete this pendulum</td></tr>
-                </tbody>
-            </table>
-
-            <h3>Tips</h3>
-            <ul>
-                <li><strong>Pause</strong> then <strong>drag</strong> any bob to set angles freely — snap aligns to 15° increments.</li>
-                <li>Press <kbd>[</kbd> / <kbd>]</kbd> while the <strong>Metrics</strong> panel is open to cycle through pendulums.</li>
-                <li>Click a <strong>plot</strong> to zoom it full-screen; click again to shrink back.</li>
-                <li>Use the <strong>Gravity</strong>, <strong>Damping</strong>, and <strong>Speed</strong> sliders (top-right) to tweak the simulation.</li>
-            </ul>
-
-            <p class="help-footer">Full documentation: <a href="README.md" target="_blank">README.md</a></p>
+            <div id="help-body"></div>
         </div>
     </div>
     <script src="script.js" defer></script>
