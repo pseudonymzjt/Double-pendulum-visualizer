@@ -77,7 +77,10 @@ const I18N = {
                 'Click a <strong>plot</strong> to zoom it full-screen; click again to shrink back.',
                 'Use the <strong>Gravity</strong>, <strong>Damping</strong>, and <strong>Speed</strong> sliders (top-right) to tweak the simulation.',
             ],
-            footer: 'Full documentation: <a href="README.md" target="_blank">README.md</a>',
+            footer: 'View Full Guide →',
+            backBtn: '← Back to Controls',
+            loading: 'Loading README…',
+            error: 'Failed to load document.',
         },
     },
     zh: {
@@ -128,7 +131,10 @@ const I18N = {
                 '点击<strong>图表</strong>可全屏显示；再次点击恢复。',
                 '使用右上角的<strong>重力</strong>、<strong>阻尼</strong>和<strong>速度</strong>滑块调节模拟参数。',
             ],
-            footer: '完整文档：<a href="README_ZH.md" target="_blank">README_ZH.md</a>',
+            footer: '查看完整指南 →',
+            backBtn: '← 返回操作说明',
+            loading: '正在加载 README…',
+            error: '文档加载失败。',
         },
     },
 };
@@ -144,7 +150,177 @@ function buildHelpHTML() {
 <h3>${H.ctxTitle} <span class="subtitle">${H.ctxSub}</span></h3>
 <table><thead><tr>${H.ctxTH.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${ctxRows}</tbody></table>
 <h3>${H.tipsTitle}</h3><ul>${tips}</ul>
-<p class="help-footer">${H.footer}</p>`;
+<p class="help-footer"><span class="help-guide-link">${H.footer}</span></p>`;
+}
+
+// --- Markdown Parser & README Viewer ------------------------------
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Convert bare Markdown text to safe HTML for in-app display. */
+function parseSimpleMarkdown(md) {
+    if (!md) return '';
+
+    // 1. Extract fenced code blocks (protect from inline parsing)
+    const codeBlocks = [];
+    md = md.replace(/```(\w*)\r?\n([\s\S]*?)```/g, (_, lang, code) => {
+        const id = `\x00CB${codeBlocks.length}\x00`;
+        codeBlocks.push(escapeHtml(code));
+        return id;
+    });
+
+    // 2. Block-level processing
+    const lines = md.split('\n');
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+        const t = line.trim();
+
+        // Empty line
+        if (!t) { i++; continue; }
+
+        // Fenced code placeholder
+        if (/^\x00CB\d+\x00$/.test(t)) {
+            out.push(t);
+            i++;
+            continue;
+        }
+
+        // ATX heading
+        const hd = t.match(/^(#{1,6})\s+(.+)$/);
+        if (hd) {
+            out.push(`<h${hd[1].length}>${processInline(hd[2])}</h${hd[1].length}>`);
+            i++;
+            continue;
+        }
+
+        // Horizontal rule (three or more dashes)
+        if (/^-{3,}\s*$/.test(t)) {
+            out.push('<hr>');
+            i++;
+            continue;
+        }
+
+        // Unordered list
+        if (/^[-*+]\s/.test(t)) {
+            const items = [];
+            while (i < lines.length && /^[-*+]\s/.test(lines[i].trim())) {
+                items.push(processInline(lines[i].trim().replace(/^[-*+]\s+/, '')));
+                i++;
+            }
+            out.push('<ul>' + items.map(it => `<li>${it}</li>`).join('') + '</ul>');
+            continue;
+        }
+
+        // Table
+        if (t.startsWith('|')) {
+            const rows = [];
+            while (i < lines.length && lines[i].trim().startsWith('|')) {
+                rows.push(lines[i].trim());
+                i++;
+            }
+            out.push(parseTable(rows));
+            continue;
+        }
+
+        // Blockquote
+        if (/^>/.test(t)) {
+            const quotes = [];
+            while (i < lines.length && /^>/.test(lines[i].trim())) {
+                quotes.push(processInline(lines[i].trim().replace(/^>\s?/, '')));
+                i++;
+            }
+            out.push(`<blockquote>${quotes.join('<br>')}</blockquote>`);
+            continue;
+        }
+
+        // Indented pre block (4+ spaces)
+        if (/^ {4,}/.test(line)) {
+            const pre = [];
+            while (i < lines.length && /^ {4,}/.test(lines[i])) {
+                pre.push(lines[i].replace(/^ {4}/, ''));
+                i++;
+            }
+            out.push(`<pre><code>${escapeHtml(pre.join('\n'))}</code></pre>`);
+            continue;
+        }
+
+        // Paragraph (collect consecutive non-empty lines that aren't block-level)
+        const para = [];
+        while (i < lines.length) {
+            const l = lines[i];
+            const tr = l.trim();
+            if (!tr) break;
+            if (tr.match(/^(#{1,6})\s/) || /^-{3,}\s*$/.test(tr)
+                || /^[-*+]\s/.test(tr) || tr.startsWith('|')
+                || /^>/.test(tr) || /^ {4,}/.test(l)
+                || /^\x00CB\d+\x00$/.test(tr)) break;
+            para.push(processInline(l));
+            i++;
+        }
+        if (para.length) {
+            out.push(`<p>${para.join('<br>')}</p>`);
+        }
+    }
+
+    // 3. Restore code-block placeholders
+    return out.join('\n').replace(/\x00CB(\d+)\x00/g, (_, id) => {
+        return `<pre><code>${codeBlocks[parseInt(id)]}</code></pre>`;
+    });
+}
+
+/** Parse inline markdown entities (bold, code, links, images). */
+function processInline(text) {
+    let t = text
+        // Inline code first (protect from other parsing)
+        .replace(/`([^`]+)`/g, (_, c) => `<code>${escapeHtml(c)}</code>`)
+        // Images → use alt text
+        .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+        // Bold
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // Links
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    return t;
+}
+
+/** Parse a markdown table into HTML. */
+function parseTable(rows) {
+    let header = null;
+    const body = [];
+    let isHeader = true;
+
+    for (const row of rows) {
+        const cells = row.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+        // Separator row (| --- | --- |)
+        if (cells.every(c => /^[\s:-]+$/.test(c))) {
+            isHeader = false;
+            continue;
+        }
+        const processed = cells.map(c => processInline(c));
+        if (isHeader) {
+            header = processed;
+        } else {
+            body.push(processed);
+        }
+    }
+
+    let html = '<table>';
+    if (header) {
+        html += '<thead><tr>' + header.map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
+    }
+    if (body.length) {
+        html += '<tbody>';
+        for (const row of body) {
+            html += '<tr>' + row.map(c => `<td>${c}</td>`).join('') + '</tr>';
+        }
+        html += '</tbody>';
+    }
+    html += '</table>';
+    return html;
 }
 
 /** Apply the current language to all UI text. */
@@ -172,6 +348,40 @@ function applyLanguage() {
 function toggleLanguage() {
     currentLang = currentLang === 'en' ? 'zh' : 'en';
     applyLanguage();
+}
+
+// --- README in-app viewer -----------------------------------------
+
+/** Show the controls overview in the help modal. */
+function showHelpOverview() {
+    const body = document.getElementById('help-body');
+    if (body) body.innerHTML = buildHelpHTML();
+}
+
+/** Fetch the README file for the current language and render it. */
+function fetchAndShowReadme() {
+    const filename = currentLang === 'en' ? './README.md' : './README_ZH.md';
+    const body = document.getElementById('help-body');
+    if (!body) return;
+    body.innerHTML = `<p class="help-loading">${I18N[currentLang].loading}</p>`;
+
+    fetch(filename)
+        .then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.text();
+        })
+        .then(md => {
+            const html = parseSimpleMarkdown(md);
+            const back = I18N[currentLang].backBtn;
+            body.innerHTML = `<div class="help-back-bar"><span class="help-back-btn">${back}</span></div>
+                <div class="help-readme-body">${html}</div>`;
+        })
+        .catch(err => {
+            console.error('fetchAndShowReadme:', err);
+            const L = I18N[currentLang];
+            body.innerHTML = `<p class="help-error">${L.error}</p>
+                <p class="help-footer"><span class="help-back-btn">${L.backBtn}</span></p>`;
+        });
 }
 
 /**
@@ -1006,7 +1216,12 @@ function toggleSettingsPanel() {
 
 /** Show / hide the help modal with README controls. */
 function toggleHelpModal() {
-    on('help-modal').classList.toggle('show');
+    const modal = on('help-modal');
+    // Show overview whenever the modal opens
+    if (!modal.classList.contains('show')) {
+        showHelpOverview();
+    }
+    modal.classList.toggle('show');
 }
 
 /** Click a plot to zoom it full-screen; click again to shrink back. */
@@ -1202,6 +1417,14 @@ on('btn-gear', 'click', toggleSettingsPanel);
 on('btn-lang', 'click', toggleLanguage);
 on('btn-help', 'click', toggleHelpModal);
 on('help-close', 'click', toggleHelpModal);
+
+// Event delegation for interactive links inside the help modal body
+on('help-body', 'click', (e) => {
+    const guideLink = e.target.closest('.help-guide-link');
+    if (guideLink) { e.preventDefault(); fetchAndShowReadme(); return; }
+    const backBtn = e.target.closest('.help-back-btn');
+    if (backBtn) { e.preventDefault(); showHelpOverview(); return; }
+});
 
 // Apply language on load (so all button texts are set)
 applyLanguage();

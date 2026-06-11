@@ -614,3 +614,180 @@ html, body {
         padding: 10px;
     }
 }
+
+/* --- README in-app viewer --- */
+
+.help-guide-link {
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.help-guide-link:hover {
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: underline;
+}
+
+.help-back-bar {
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.help-back-btn {
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    font-size: 13px;
+    transition: color 0.15s;
+}
+.help-back-btn:hover {
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: underline;
+}
+
+.help-loading,
+.help-error {
+    text-align: center;
+    padding: 32px 0;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+}
+.help-error {
+    color: #ff6b6b;
+}
+
+/* Rendered README body */
+.help-readme-body h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 12px;
+    letter-spacing: 0.3px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.help-readme-body h2 {
+    font-size: 17px;
+    font-weight: 600;
+    color: #fff;
+    margin: 22px 0 10px;
+}
+.help-readme-body h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    margin: 18px 0 8px;
+}
+.help-readme-body h4,
+.help-readme-body h5,
+.help-readme-body h6 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ddd;
+    margin: 14px 0 6px;
+}
+.help-readme-body p {
+    margin: 8px 0;
+    font-size: 13px;
+    line-height: 1.7;
+    color: rgba(255, 255, 255, 0.8);
+}
+.help-readme-body a {
+    color: #6ea8fe;
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.help-readme-body a:hover {
+    color: #9ec5fe;
+    text-decoration: underline;
+}
+.help-readme-body strong {
+    color: #fff;
+}
+.help-readme-body pre {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.help-readme-body pre code {
+    background: none;
+    padding: 0;
+    border: none;
+    color: #e0e0e0;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre;
+    word-wrap: normal;
+}
+.help-readme-body code {
+    font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: #f0c674;
+    white-space: nowrap;
+}
+.help-readme-body hr {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 18px 0;
+}
+.help-readme-body blockquote {
+    border-left: 3px solid rgba(255, 255, 255, 0.2);
+    padding: 6px 14px;
+    margin: 10px 0;
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0 6px 6px 0;
+}
+.help-readme-body ul {
+    list-style: disc;
+    padding-left: 20px;
+    margin: 6px 0;
+    font-size: 13px;
+}
+.help-readme-body ul li {
+    padding: 2px 0;
+}
+.help-readme-body ul li::before {
+    display: none;
+}
+.help-readme-body table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 10px 0;
+}
+.help-readme-body th {
+    text-align: left;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.help-readme-body td {
+    padding: 5px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: top;
+    color: rgba(255, 255, 255, 0.75);
+}
+.help-readme-body tr:last-child td {
+    border-bottom: none;
+}
+
+@media (max-width: 768px) {
+    .help-readme-body h1 { font-size: 17px; }
+    .help-readme-body h2 { font-size: 15px; }
+    .help-readme-body h3 { font-size: 14px; }
+    .help-readme-body pre { padding: 10px 12px; }
+    .help-readme-body table { font-size: 11px; }
+    .help-readme-body th,
+    .help-readme-body td { padding: 4px 6px; }
+}
