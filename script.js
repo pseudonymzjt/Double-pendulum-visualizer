@@ -295,7 +295,7 @@ function processInline(text) {
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         // Links — internal .md links open in-app, external links get target=_blank
         .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
-            if (/\.md$/i.test(href)) return `<a href="${href}">${text}</a>`;
+            if (/\.(md|txt)$/i.test(href)) return `<a href="${href}">${text}</a>`;
             return `<a href="${href}" target="_blank">${text}</a>`;
         });
     return t;
@@ -379,10 +379,10 @@ function showHelpOverview() {
 }
 
 /**
- * Fetch any .md file, parse it, render it in the modal body, and bind
+ * Fetch any .md / .txt file, parse it, render it in the modal body, and bind
  * internal wiki links so they load in-app instead of navigating away.
  *
- * The fetch URL MUST be strictly relative (e.g. ./README.md) and the
+ * The fetch URL MUST be strictly relative (e.g. ./README.txt) and the
  * filename casing MUST match the repository exactly.  On failure a
  * detailed user-facing error is shown so "undefined" never reaches
  * the rendering pipeline.
@@ -410,7 +410,7 @@ function loadAndRenderMD(path) {
 
             // Parse & render
             const html = parseSimpleMarkdown(markdownText);
-            const isRoot = path === './README.md' || path === './README_ZH.md';
+            const isRoot = path === './README.txt' || path === './README_ZH.txt';
             const L = I18N[currentLang];
             const topBar = isRoot
                 ? `<div class="help-back-bar"><span class="help-back-btn">${L.backBtn}</span></div>`
@@ -418,20 +418,26 @@ function loadAndRenderMD(path) {
             body.innerHTML = topBar + `<div class="help-readme-body">${html}</div>`;
             bindMarkdownLinks(body);
         })
-        .catch(err => {
-            console.error('loadAndRenderMD:', err);
+        .catch(error => {
+            console.error(error);
             body.innerHTML = `
                 <div class="help-back-bar"><span class="help-back-guide">${I18N[currentLang].guideIndex}</span></div>
-                <div class="error-container">
-                    <p class="error-title">⚠️ ${I18N[currentLang].error}</p>
-                    <p class="error-detail">${err.message}</p>
-                    <p class="error-hint">${I18N[currentLang].errorHint}</p>
+                <div class="error-container" style="text-align: center; padding: 40px 20px; color: #ff4a4a;">
+                    <h2 style="font-size: 1.5em; margin-bottom: 10px;">⚠️ Guide Load Failed</h2>
+                    <p style="font-size: 0.95em; opacity: 0.85; margin-bottom: 20px;">${error.message}</p>
+                    <div style="font-size: 0.85em; opacity: 0.6; line-height: 1.6; text-align: left; max-width: 420px; margin: 0 auto; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+                        <p><strong>Common Fixes for UCAS Assignment Platform:</strong></p>
+                        <ul>
+                            <li>Ensure you renamed <code>README.md</code> to <code>README.txt</code> in your root folder.</li>
+                            <li>Ensure <code>AI_ENCLOSURE.txt</code> is also placed in the root folder.</li>
+                        </ul>
+                    </div>
                 </div>`;
         });
 }
 
 /**
- * Scan the rendered README body for all anchor tags pointing to .md files
+ * Scan the rendered README body for all anchor tags pointing to .md / .txt files
  * and intercept their clicks to load in-app instead of browser navigation.
  */
 function bindMarkdownLinks(container) {
@@ -439,10 +445,12 @@ function bindMarkdownLinks(container) {
     if (!readmeBody) return;
     readmeBody.querySelectorAll('a').forEach(a => {
         const href = a.getAttribute('href');
-        if (href && /\.md$/i.test(href)) {
+        if (href && /\.(md|txt)$/i.test(href)) {
             a.addEventListener('click', (e) => {
                 e.preventDefault();
-                loadAndRenderMD(href);
+                // Rewrite .md -> .txt so internal links survive the rename
+                const target = href.replace(/\.md$/i, '.txt');
+                loadAndRenderMD(target);
             });
         }
     });
@@ -450,7 +458,7 @@ function bindMarkdownLinks(container) {
 
 /** Fetch the README file for the current language and render it. */
 function fetchAndShowReadme() {
-    const filename = currentLang === 'en' ? './README.md' : './README_ZH.md';
+    const filename = currentLang === 'en' ? './README.txt' : './README_ZH.txt';
     loadAndRenderMD(filename);
 }
 
@@ -1497,7 +1505,7 @@ on('help-body', 'click', (e) => {
     const backGuide = e.target.closest('.help-back-guide');
     if (backGuide) {
         e.preventDefault();
-        const rootPath = currentLang === 'en' ? './README.md' : './README_ZH.md';
+        const rootPath = currentLang === 'en' ? './README.txt' : './README_ZH.txt';
         loadAndRenderMD(rootPath);
         return;
     }
