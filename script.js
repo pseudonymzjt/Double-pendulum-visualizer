@@ -48,6 +48,8 @@ const I18N = {
         addTitleMax: 'Maximum pendulum limit reached',
         addJointTitle: 'Add joint',
         addJointTitleMax: 'Maximum bob limit reached for physical stability',
+        copyright: 'MIT © pseudonymzjt',
+        sourceLink: 'Source on GitHub',
         help: {
             title: 'Controls',
             th: ['Button', 'Keyboard', 'Action'],
@@ -103,6 +105,8 @@ const I18N = {
         addTitleMax: '已达到最大摆数量限制',
         addJointTitle: '添加关节',
         addJointTitleMax: '已达到最大关节数量限制，以保证物理稳定性',
+        copyright: 'MIT © pseudonymzjt',
+        sourceLink: 'GitHub 源代码',
         help: {
             title: '操作说明',
             th: ['按钮', '键盘', '动作'],
@@ -349,6 +353,11 @@ function applyLanguage() {
     // Help modal content
     const helpBody = document.getElementById('help-body');
     if (helpBody) helpBody.innerHTML = buildHelpHTML();
+    // Footer — copyright & source link
+    const footer = document.getElementById('app-footer');
+    if (footer) {
+        footer.innerHTML = `${L.copyright} · <a href="https://github.com/pseudonymzjt/Double-Pendulum-Visualizer" target="_blank">${L.sourceLink}</a>`;
+    }
     updateControls();
 }
 
