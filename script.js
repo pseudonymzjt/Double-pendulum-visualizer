@@ -9,7 +9,7 @@ let G = 11.0;                    // gravitational acceleration (m/s²)
 let DAMPING = 0.0003;            // per-frame velocity damping (fraction)
 let speedMultiplier = 1.0;       // physics speed multiplier (0.2–3.0)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
-const SUB_STEPS = 4;             // RK4 sub-steps per frame
+const SUB_STEPS = 8;             // RK4 sub-steps per frame (increased for stability)
 let TRAIL_LENGTH = 1200;  // max trail points — updated dynamically in resizeCanvas
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians
@@ -17,6 +17,8 @@ const SNAP_DEG = 15;
 const SNAP_THRESHOLD = 5;
 const LINK_SCALE = 0.85;         // length multiplier when adding joints
 const MIN_LINKS = 2;             // minimum links per pendulum
+const MAX_LINKS = 8;             // maximum joints per pendulum for RK4 stability
+const MAX_PENDULUMS = 8;         // maximum number of independent pendulums
 const HIT_RADIUS = 22;           // px — bob grab radius
 const PENDULUM_VIEWPORT_FRACTION = 0.18;  // fraction of min viewport dimension
 const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
@@ -43,6 +45,9 @@ const I18N = {
         energyTitle: 'Energy — KE / PE / E_total',
         settingsTitle: 'Settings',
         addTitle: 'Add pendulum',
+        addTitleMax: 'Maximum pendulum limit reached',
+        addJointTitle: 'Add joint',
+        addJointTitleMax: 'Maximum bob limit reached for physical stability',
         help: {
             title: 'Controls',
             th: ['Button', 'Keyboard', 'Action'],
@@ -91,6 +96,9 @@ const I18N = {
         energyTitle: '能量 — 动能 / 势能 / 总能',
         settingsTitle: '设置',
         addTitle: '添加摆',
+        addTitleMax: '已达到最大摆数量限制',
+        addJointTitle: '添加关节',
+        addJointTitleMax: '已达到最大关节数量限制，以保证物理稳定性',
         help: {
             title: '操作说明',
             th: ['按钮', '键盘', '动作'],
@@ -264,6 +272,31 @@ function syncBobPositions(p) {
     const last = p.particles[p.particles.length - 1];
     p.bob2X = last.x;
     p.bob2Y = last.y;
+}
+
+/** Check whether any physics variable has exploded to NaN or Infinity. */
+function isPendulumInvalid(p) {
+    for (let i = 0; i < p.N; i++) {
+        if (isNaN(p.thetas[i]) || !isFinite(p.thetas[i])) return true;
+        if (isNaN(p.omegas[i]) || !isFinite(p.omegas[i])) return true;
+    }
+    for (let i = 0; i < p.particles.length; i++) {
+        if (isNaN(p.particles[i].x) || !isFinite(p.particles[i].x)) return true;
+        if (isNaN(p.particles[i].y) || !isFinite(p.particles[i].y)) return true;
+    }
+    return false;
+}
+
+/** Reset a pendulum to a safe resting state after a numerical explosion. */
+function safeResetPendulum(p) {
+    console.warn('Physics exploded! Resetting to safe state.');
+    p.omegas.fill(0);
+    const safeRad = DEFAULT_ANGLE_DEG * Math.PI / 180;
+    p.thetas.fill(safeRad);
+    rebuildChain(p, p.constraints.length, DEFAULT_ANGLE_DEG);
+    computeParticlePositions(p);
+    syncBobPositions(p);
+    for (const t of p.trails) t.length = 0;
 }
 
 /** Rebuild particles + constraints at a new pxPerUnit scale. */
@@ -490,6 +523,12 @@ function stepPhysics() {
         // Convert angles → pixel positions
         computeParticlePositions(p);
         syncBobPositions(p);
+
+        // NaN / Infinity safety net — detect numerical explosion and recover
+        if (isPendulumInvalid(p)) {
+            safeResetPendulum(p);
+            continue;  // skip trail recording for this frame
+        }
 
         // Record trails for all particles (inner = shorter limit, tip = full)
         const total = p.particles.length;
@@ -991,6 +1030,7 @@ function toggleChaos() {
         if (pendulums.length > 1) pendulums.pop();
         chaosMode = false;
     } else {
+        if (pendulums.length >= MAX_PENDULUMS) return;
         const a = pendulums[0];
         const n = a.constraints.length;
         // Copy A's angles + tiny offset for butterfly-effect divergence
@@ -1105,7 +1145,8 @@ function updateControls() {
     on('btn-clear').textContent = L.clear;
     on('btn-save').textContent = L.save;
     on('btn-help').textContent = L.guide;
-    on('btn-add').title = L.addTitle;
+    on('btn-add').title = pendulums.length >= MAX_PENDULUMS ? L.addTitleMax : L.addTitle;
+    on('btn-add').disabled = pendulums.length >= MAX_PENDULUMS;
     on('btn-gear').title = L.settingsTitle;
     const hasSel = selectedPendulum !== null && pendulums[selectedPendulum];
     on('ctx-menu').classList.toggle('show', !!hasSel);
@@ -1116,7 +1157,9 @@ function updateControls() {
         // ctx-visibility swaps between eye-open and eye-off SVGs
         on('ctx-visibility').innerHTML = p.visible ? EYE_ON_SVG : EYE_OFF_SVG;
         const n = p.constraints.length;
-        on('ctx-add-joint').style.display = '';
+        const atMaxLinks = n >= MAX_LINKS;
+        on('ctx-add-joint').style.display = atMaxLinks ? 'none' : '';
+        on('ctx-add-joint').title = atMaxLinks ? L.addJointTitleMax : L.addJointTitle;
         on('ctx-rm-joint').style.display = n > MIN_LINKS ? '' : 'none';
     } else {
         on('ctx-add-joint').style.display = 'none';
@@ -1229,6 +1272,7 @@ function assignPaletteColor(p) {
 }
 
 function addPendulum() {
+    if (pendulums.length >= MAX_PENDULUMS) return;
     const p = createPendulum(MIN_LINKS, DEFAULT_ANGLE_DEG, '#888', '#888');
     assignPaletteColor(p);
     pendulums.push(p);
@@ -1273,6 +1317,7 @@ function toggleVisibility() {
 function addJoint() {
     if (selectedPendulum === null) return;
     const p = pendulums[selectedPendulum];
+    if (p.constraints.length >= MAX_LINKS) return;
     const last = p.constraints.length;
     const tip = p.particles[last];
     const prev = p.particles[last - 1];

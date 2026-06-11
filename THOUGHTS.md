@@ -935,3 +935,74 @@ After deploying to GitHub Pages, the script crashed at boot with `TypeError: Can
   - `on(id, event, handler)` — safely binds an event listener. If `$(id)` returns `null`, the listener is silently skipped.
 - Converted all 18 `document.getElementById(id).addEventListener(event, handler)` calls to `on(id, event, handler)`.
 - Left `window`, `document`, and `canvasB` listeners unchanged (these DOM nodes always exist).
+
+---
+
+# Stability Fixes — NaN Detection, Sub-stepping & Max Bob Limit
+
+## Motivation
+
+The user reported: *"When adding too many bobs (e.g., more than 8 or 9), the entire pendulum and trajectory suddenly disappear from the screen."*
+
+This is a classic numerical explosion: the N×N mass matrix in the RK4 Lagrangian solver becomes near-singular for large N (8+ links), causing Gaussian elimination to produce NaN (Not a Number) or Infinity values. These propagate through the physics state, corrupting all positions — causing the canvas to render nothing (all drawing operations with NaN coordinates are silently ignored).
+
+## Fix 1: NaN & Infinity Detection with Auto-Reset
+
+### `isPendulumInvalid(p)`
+
+Scans every physics variable — angles (`thetas[]`), angular velocities (`omegas[]`), and particle positions (`x`, `y`) — for `NaN` or non-finite values. Returns `true` on the first invalid value found. Checks are ordered: angles first (most likely to explode from the matrix solve), then positions (derived).
+
+### `safeResetPendulum(p)`
+
+On explosion:
+1. Logs `"Physics exploded! Resetting to safe state."` to the console (subtle warning, non-intrusive).
+2. Zeros all angular velocities (`omegas.fill(0)`).
+3. Resets all angles to the safe resting state (`DEFAULT_ANGLE_DEG = 135°`).
+4. Rebuilds the entire particle chain at the reset angle via `rebuildChain()`.
+5. Clears all trail arrays — prevents drawing corrupted lines from the explosion frame.
+
+### Integration in `stepPhysics()`
+
+After RK4 integration, damping, and position computation, `isPendulumInvalid(p)` is checked. If triggered, `safeResetPendulum(p)` is called and `continue` skips trail recording for that frame. The pendulum reappears in the safe state on the very next frame.
+
+**Cost**: O(N) per pendulum per frame — negligible. The early-return pattern means we only pay the check, not the reset, in normal operation.
+
+## Fix 2: Sub-stepping Increase
+
+`SUB_STEPS` increased from `4` → `8`. Each RK4 sub-step now operates at `dt/8 = 1/480 s` instead of `dt/4 = 1/240 s`. Halving the integration step size improves the accuracy of the 4th-order Runge-Kutta method within the safe operating range (≤8 links). This does not fundamentally fix the N>8 singularity, but it pushes the stability boundary further out.
+
+## Fix 3: Hard Cap on Max Bob/Limb Count
+
+Two new constants gate all pendulum-creation paths:
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `MAX_LINKS` | 8 | Maximum joints (bobs) per pendulum — prevents the N×N mass matrix from becoming near-singular |
+| `MAX_PENDULUMS` | 8 | Maximum total independent pendulums — prevents performance degradation from too many concurrent simulations |
+
+### Guards
+
+- **`addPendulum()`** — returns early if `pendulums.length >= MAX_PENDULUMS`.
+- **`addJoint()`** — returns early if `p.constraints.length >= MAX_LINKS`.
+- **`toggleChaos()`** — returns early if already at `MAX_PENDULUMS` (chaos mode spawns a second pendulum, which could break the limit).
+- **`updateControls()`** — disables the `+` button (greyed out, `cursor: not-allowed`) and hides the `➕` add-joint button when at their respective limits. Tooltips switch to explanatory messages in both English and Chinese.
+
+### I18N tooltip strings added
+
+| Key | English | 中文 |
+|---|---|---|
+| `addTitleMax` | Maximum pendulum limit reached | 已达到最大摆数量限制 |
+| `addJointTitleMax` | Maximum bob limit reached for physical stability | 已达到最大关节数量限制，以保证物理稳定性 |
+
+### CSS
+
+A `#controls button:disabled` rule sets `color: rgba(255,255,255,0.12)` and `cursor: not-allowed` — visually distinct from the normal 35% opacity hoverable state.
+
+## Design Decision: Why 8, not 4?
+
+The user explicitly requested the limit be set at 8–9, not 4. While the RK4 analytical solver is theoretically more stable at N≤4, empirical testing showed that with SUB_STEPS=8 and the NaN safety net in place, N=8 is a safe operational ceiling. The NaN detector acts as a last-resort circuit breaker if the matrix solve ever does produce garbage — so the user gets a smooth reset rather than a blank screen, even at the limit.
+
+## Files Changed
+
+- **script.js**: Added `MAX_LINKS`, `MAX_PENDULUMS` constants. Bumped `SUB_STEPS` 4→8. Added `isPendulumInvalid()`, `safeResetPendulum()`. Integrated NaN check in `stepPhysics()`. Guarded `addPendulum()`, `addJoint()`, `toggleChaos()`. Updated `updateControls()` for button disable/hide logic. Added 4 I18N keys.
+- **style.css**: Added `#controls button:disabled` rule.

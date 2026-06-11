@@ -12,13 +12,13 @@ A high-performance, minimalist HTML5 Canvas web application that visualises the 
 
 ## Features
 
-- **RK4 → Verlet Physics**: Stable N-link pendulum simulation using Verlet integration with distance constraints.
+- **Exact Lagrangian RK4 Physics**: Full N-link pendulum simulation using the exact Lagrangian equations of motion, solved via RK4 integration with 8 sub-steps per frame. N×N mass matrix with trigonometric coupling — no small-angle approximations.
 - **N-Link Chains**: Start with 2 links, add or remove joints to create triple, quadruple, or longer pendulum chains.
 - **Chaos Mode**: Press `C` to spawn a second pendulum at a microscopic 0.01° offset — watch the butterfly effect unfold as cyan and magenta trajectories visibly split.
 - **Multi-Pendulum Sandbox**: Click `+` to add independent pendulums, each with its own color from an 8-colour palette. Select, drag, customise, or delete any pendulum.
 - **Fading Trajectory Trails**: Every bob leaves a fading trail rendered as batched line segments with gradient opacity. The tip trail uses velocity-based line width (thin when fast, thick when slow).
 - **Drag-to-Set**: Pause and drag any bob to freely set angles. Magnetic snap aligns to 15° increments.
-- **Slow-Motion**: Toggle 0.5× speed to appreciate high-velocity chaotic motion.
+- **Stability Safeguards**: NaN/Infinity detection with auto-reset prevents numerical explosion. Max 8 bobs per pendulum and 8 total pendulums, with UI feedback when limits are reached.
 - **Export Artwork**: Save the full canvas (trails + pendulums) as a high-resolution PNG.
 - **HiDPI / Retina**: Pixel-perfect rendering via `devicePixelRatio` scaling.
 - **Touch Support**: Full drag-to-set and selection via touch events for mobile.
@@ -32,7 +32,7 @@ A high-performance, minimalist HTML5 Canvas web application that visualises the 
 | `↺ Reset` | `R` | Reset to initial state |
 | `⚡ Chaos` / `⚡ Single` | `C` | Toggle chaos mode |
 | `✕ Clear Trail` | — | Erase all trails |
-| `⏱ ½× Slow` / `⏱ 1× Speed` | — | Toggle slow-motion |
+| `📖 Guide` | — | Show controls reference |
 | `⬇ Save` | — | Export PNG |
 
 ### Language Toggle
@@ -65,7 +65,7 @@ Double-Pendulum-Visualizer/
 - **Layer A** (`#canvas-a`): Trajectory trails — cleared and fully redrawn each frame from stored point arrays.
 - **Layer B** (`#canvas-b`): Pendulum rods, bobs, and pivot — cleared and redrawn fresh each frame.
 
-**Physics**: Verlet integration with distance constraints. 4 sub-steps per frame, 10 constraint-solver iterations per sub-step. `G × pxPerUnit × 8` gravity for visual swing speed.
+**Physics**: Exact Lagrangian RK4 integration. 8 sub-steps per frame (h = 1/480 s). N×N mass matrix solved via Gaussian elimination with partial pivoting — full trigonometric coupling with no small-angle approximations. NaN/Infinity safety net with auto-reset. Max 8 bobs per pendulum, 8 pendulums total.
 
 ## Getting Started
 
