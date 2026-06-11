@@ -2,6 +2,12 @@
 
 > **Language**: English · [中文](README_ZH.md)
 
+[![MIT License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](https://github.com/pseudonymzjt/Double-Pendulum-Visualizer/blob/master/LICENSE)
+[![HTML5](https://img.shields.io/badge/HTML5-E34F26?style=flat-square&logo=html5&logoColor=white)](index.html)
+[![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat-square&logo=css3&logoColor=white)](style.css)
+[![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)](script.js)
+[![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
+
 A high-performance, minimalist HTML5 Canvas web application that visualises the beautiful and chaotic motion of double pendulums. No libraries, no frameworks — just vanilla HTML, CSS, and JavaScript.
 
 ## Features

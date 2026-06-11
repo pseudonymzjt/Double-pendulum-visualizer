@@ -141,31 +141,7 @@ AI 分析并修复了多个缺陷，详见 `THOUGHTS.md`：
 
 本项目是真正的人机协作成果：人类提供了领域知识、方向指引、测试验证和质量把关；AI 提供了代码生成、快速实现、调试分析和文档撰写。每一项设计决策都源于人类的需求，每一行代码输出在纳入项目前都经过人类的审查和认可。
 
----
-
-## 附录 A — README 集成指引
-
-将以下徽章和链接复制到您的 `README.md` 中，以引用本声明：
-
-```markdown
-[![AI辅助开发](https://img.shields.io/badge/AI-%E8%BE%85%E5%8A%A9%E5%BC%80%E5%8F%91-blue?style=flat-square)](AI_DISCLOSURE_ZH.md)
-```
-
-推荐位置：在项目描述段落之后、功能列表或安装说明之前。
-
-示例：
-
-```markdown
-# 双摆可视化器
-
-支持实时相空间分析的 N 摆混沌模拟器。
-
-[![AI辅助开发](https://img.shields.io/badge/AI-%E8%BE%85%E5%8A%A9%E5%BC%80%E5%8F%91-blue?style=flat-square)](AI_DISCLOSURE_ZH.md)
-```
-
----
-
-## 附录 B — 术语对照表
+## 附录 A — 术语对照表
 
 | English | 中文 |
 |---------|------|

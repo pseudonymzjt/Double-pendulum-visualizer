@@ -141,25 +141,4 @@ All commits were initiated and approved by the human. The AI did not push code w
 
 This project is a genuine human-AI collaboration: the human provided domain knowledge, direction, testing, and quality control; the AI provided code generation, implementation speed, debugging analysis, and documentation. Every design decision flowed from a human requirement, and every line of output was reviewed and accepted by the human before inclusion.
 
----
-
-## Appendix A — README Integration
-
-Copy the following badge and link into your `README.md` to reference this disclosure:
-
-[![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
-
-
-Recommended placement: at the end of your project description section, before the feature list or installation instructions.
-
-Example:
-
-```markdown
-# Double Pendulum Visualizer
-
-An N-pendulum chaotic simulation with real-time phase analysis.
-
-```
-
-[![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
 
