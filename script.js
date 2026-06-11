@@ -821,6 +821,11 @@ function toggleSettingsPanel() {
     on('params-panel').classList.toggle('show');
 }
 
+/** Show / hide the help modal with README controls. */
+function toggleHelpModal() {
+    on('help-modal').classList.toggle('show');
+}
+
 /** Click a plot to zoom it full-screen; click again to shrink back. */
 function togglePlotZoom(plotId) {
     if (zoomedPlotId === plotId) {
@@ -999,6 +1004,20 @@ on('param-speed', 'input', (e) => {
 on('btn-add', 'click', addPendulum);
 on('btn-metrics', 'click', toggleMetricsPanel);
 on('btn-gear', 'click', toggleSettingsPanel);
+on('btn-help', 'click', toggleHelpModal);
+on('help-close', 'click', toggleHelpModal);
+
+// Close help modal on Escape key or click outside content
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && on('help-modal').classList.contains('show')) {
+        toggleHelpModal();
+    }
+});
+on('help-modal', 'click', (e) => {
+    if (e.target === on('help-modal')) {
+        toggleHelpModal();
+    }
+});
 
 // Click-to-zoom on plot canvases (only when panel is visible)
 on('plot-phase', 'click', (e) => {
