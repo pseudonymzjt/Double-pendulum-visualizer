@@ -1,5 +1,7 @@
 # Design Record — Phase 1
 
+> **Language**: English · [中文](THOUGHTS_ZH.md)
+
 ## Project
 **Chaotic Art — Double Pendulum Visualizer**  
 A high-performance, minimalist HTML5 Canvas web application focused on the aesthetic flow and chaotic divergence of a double pendulum.

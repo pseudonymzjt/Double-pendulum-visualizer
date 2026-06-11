@@ -1,5 +1,7 @@
 # Chaotic Art — Double Pendulum Visualizer
 
+> **Language**: English · [中文](README_ZH.md)
+
 A high-performance, minimalist HTML5 Canvas web application that visualises the beautiful and chaotic motion of double pendulums. No libraries, no frameworks — just vanilla HTML, CSS, and JavaScript.
 
 ## Features
