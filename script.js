@@ -1,3 +1,4 @@
+'use strict';
 /* ============================================================
    Chaotic Art — Double Pendulum Visualizer
    Stage 8 — Exact Lagrangian RK4 Physics Engine
@@ -9,9 +10,7 @@ let DAMPING = 0.0003;            // per-frame velocity damping (fraction)
 let speedMultiplier = 1.0;       // physics speed multiplier (0.2–3.0)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
 const SUB_STEPS = 4;             // RK4 sub-steps per frame
-// Trail length — capped lower on mobile for performance
-const isMobile = window.matchMedia ? window.matchMedia("(max-width: 768px)").matches : false;
-let TRAIL_LENGTH = isMobile ? 600 : 1200;  // max trail points
+let TRAIL_LENGTH = 1200;  // max trail points — updated dynamically in resizeCanvas
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians
 const SNAP_DEG = 15;
@@ -19,21 +18,23 @@ const SNAP_THRESHOLD = 5;
 const LINK_SCALE = 0.85;         // length multiplier when adding joints
 const MIN_LINKS = 2;             // minimum links per pendulum
 const HIT_RADIUS = 22;           // px — bob grab radius
+const PENDULUM_VIEWPORT_FRACTION = 0.18;  // fraction of min viewport dimension
 const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
 let globalMetricsStep = 0;       // monotonically increasing step counter for X-axis
 
-/** Tiny $() helper — returns element or null. */
-function $(id) { return document.getElementById(id); }
-
 /**
  * Dual-purpose helper:
- *   on('id')              — returns the element (like $())
+ *   on('id')              — returns the element (like getElementById)
  *   on('id', 'evt', fn)   — safely binds event listener, skips if element missing
  */
 function on(id, event, handler) {
-    const el = $(id);
+    const el = document.getElementById(id);
     if (arguments.length === 1) return el;
-    if (el) el.addEventListener(event, handler);
+    if (el) {
+        el.addEventListener(event, handler);
+    } else {
+        console.warn(`on: element "#${id}" not found, cannot bind "${event}"`);
+    }
 }
 
 function snapAngle(rad) {
@@ -67,7 +68,7 @@ function buildChain(nLinks, thetaDeg) {
 
 // --- Pendulum state ---------------------------------------------
 
-function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) {
+function createPendulum(nLinks, theta1Deg, color1, color2, copyFrom) {
     const chain = buildChain(nLinks, theta1Deg);
     const np = chain.particles.length;
     const N = chain.constraints.length;
@@ -77,10 +78,6 @@ function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) 
     const omegas = new Array(N).fill(0);
     const p = {
         thetas, omegas, ls, N,
-        theta1: rad, theta2: rad,  // compat shims for old code
-        omega1: 0, omega2: 0,
-        l1: ls[0] || 0,
-        l2: N > 1 ? ls.slice(1).reduce((a, b) => a + b, 0) : 0,
         particles: chain.particles,
         constraints: chain.constraints,
         bob1X: 0, bob1Y: 0,
@@ -100,18 +97,6 @@ function createPendulum(nLinks, theta1Deg, theta2Deg, color1, color2, copyFrom) 
         }
     }
     return p;
-}
-
-/** Sync theta1/theta2/l1/l2 compat shims from arrays. */
-function syncCompatShims(p) {
-    p.theta1 = p.thetas[0];
-    p.omega1 = p.omegas[0];
-    p.l1 = p.ls[0] || 0;
-    if (p.N >= 2) {
-        p.theta2 = p.thetas[1];
-        p.omega2 = p.omegas[1];
-    }
-    p.l2 = p.N > 1 ? p.ls.slice(1).reduce((a, b) => a + b, 0) : 0;
 }
 
 /** Convert angles → pixel positions for all particles. */
@@ -144,7 +129,9 @@ function rebuildChain(p, nLinks, thetaDeg) {
     p.constraints = chain.constraints;
     p.ls = chain.constraints.map(c => c.len);
     p.N = p.ls.length;
-    syncCompatShims(p);
+    // Ensure trails array matches particle count
+    while (p.trails.length < chain.particles.length) p.trails.push([]);
+    while (p.trails.length > chain.particles.length) p.trails.pop();
 }
 
 const pendulums = [];
@@ -155,6 +142,7 @@ let paletteIdx = 0;
 
 // Phase 8 — Metrics & Analysis state
 let metricsVisible = false;
+let lastAngleHTML = '';          // cache to avoid redundant DOM writes
 
 // Drag-to-set state
 let dragTarget = null;   // particle index being dragged
@@ -173,6 +161,8 @@ const PALETTE = [
 ];
 const C_A = PALETTE[0];
 const C_B = PALETTE[1];
+const EYE_ON_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg>';
 
 // --- Canvas (HiDPI) — dual layer ---------------------------------
 const canvasA = on('canvas-a');
@@ -196,7 +186,9 @@ function resizeCanvas() {
     ctxB.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const minDim = Math.min(cw, ch);
-    pxPerUnit = minDim * 0.18 / PHYS_L;
+    const mobile = window.matchMedia("(max-width: 768px)").matches;
+    TRAIL_LENGTH = mobile ? 600 : 1200;
+    pxPerUnit = minDim * PENDULUM_VIEWPORT_FRACTION / PHYS_L;
 
     PIVOT.x = cw / 2;
     PIVOT.y = ch * 0.3;
@@ -211,7 +203,6 @@ function resizeCanvas() {
         p.constraints = chain.constraints;
         p.ls = chain.constraints.map(c => c.len);
         p.N = p.ls.length;
-        syncCompatShims(p);
         computeParticlePositions(p);
         syncBobPositions(p);
     }
@@ -458,6 +449,8 @@ function clearMetrics() {
 let PLOT_W = 290;
 let PLOT_H = 180;
 let zoomedPlotId = null;    // null, 'phase', or 'energy'
+let plotPhaseCtx = null;    // cached 2d context for phase plot
+let plotEnergyCtx = null;   // cached 2d context for energy plot
 
 const PLOT_MARGIN = { left: 58, right: 58, top: 38, bottom: 40 };
 
@@ -718,7 +711,8 @@ function renderPhasePortrait() {
     const N = p.N;
 
     const canvas = on('plot-phase');
-    const ctx = canvas.getContext('2d');
+    if (!plotPhaseCtx) plotPhaseCtx = canvas.getContext('2d');
+    const ctx = plotPhaseCtx;
     setupPlotCanvas(canvas, ctx);
 
     // Normalise θ₁ to [-π, π) for consistent -180°–180° view
@@ -734,19 +728,9 @@ function renderPhasePortrait() {
     const yRange = dataRange(Y);
 
     drawPlotGrid(ctx);
-    // Zero axes (θ=0 vertical, ω₁=0 horizontal)
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 1.2;
     const top = PLOT_MARGIN.top, bot = PLOT_H - PLOT_MARGIN.bottom;
     const left = PLOT_MARGIN.left, right = PLOT_W - PLOT_MARGIN.right;
-    // θ=0 vertical
-    const x0 = pxX(0, xRange.min, xRange.max);
-    ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, bot); ctx.stroke();
-    // ω₁=0 horizontal
-    if (yRange.min < 0 && yRange.max > 0) {
-        const y0 = pxY(0, yRange.min, yRange.max);
-        ctx.beginPath(); ctx.moveTo(left, y0); ctx.lineTo(right, y0); ctx.stroke();
-    }
+    drawZeroAxes(ctx, xRange.min, xRange.max, yRange.min, yRange.max);
 
     // Tick labels in degrees, fixed -180–180 range
     drawTickLabels(ctx, -180, 180, yRange.min, yRange.max,
@@ -768,7 +752,8 @@ function renderEnergyPlot() {
     const last = data[data.length - 1];
 
     const canvas = on('plot-energy');
-    const ctx = canvas.getContext('2d');
+    if (!plotEnergyCtx) plotEnergyCtx = canvas.getContext('2d');
+    const ctx = plotEnergyCtx;
     setupPlotCanvas(canvas, ctx);
 
     // Use monotonically increasing step numbers — as the buffer slides
@@ -860,13 +845,12 @@ function toggleChaos() {
         const a = pendulums[0];
         const n = a.constraints.length;
         // Copy A's angles + tiny offset for butterfly-effect divergence
-        const b = createPendulum(n, DEFAULT_ANGLE_DEG, DEFAULT_ANGLE_DEG, C_B.c1, C_B.c2, a);
+        const b = createPendulum(n, DEFAULT_ANGLE_DEG, C_B.c1, C_B.c2, a);
         for (let i = 0; i < n; i++) {
             b.thetas[i] = a.thetas[i];
             b.omegas[i] = a.omegas[i];
         }
         b.thetas[0] += CHAOS_OFFSET;   // 0.01° offset on θ₁ for divergence
-        syncCompatShims(b);
         computeParticlePositions(b);
         syncBobPositions(b);
         pendulums.push(b);
@@ -917,7 +901,10 @@ function saveArtwork() {
 
 function updateAngleDisplay() {
     const el = on('angle-display');
-    if (pendulums.length === 0) { el.innerHTML = ''; return; }
+    if (pendulums.length === 0) {
+        if (lastAngleHTML !== '') { el.innerHTML = ''; lastAngleHTML = ''; }
+        return;
+    }
 
     let html = '';
     for (let idx = 0; idx < pendulums.length; idx++) {
@@ -935,7 +922,10 @@ function updateAngleDisplay() {
         html += `<div class="pend-entry${selClass}" data-idx="${idx}" style="color:${p.color2}">`
             + `<span class="marker">${marker}</span> ${parts.join('  ')}</div>`;
     }
-    el.innerHTML = html;
+    if (html !== lastAngleHTML) {
+        el.innerHTML = html;
+        lastAngleHTML = html;
+    }
 }
 
 // Pick pendulums by clicking their angle-display entry.
@@ -967,9 +957,7 @@ function updateControls() {
         const p = pendulums[selectedPendulum];
         // ctx-color SVG is in the HTML — no dynamic change needed
         // ctx-visibility swaps between eye-open and eye-off SVGs
-        const EYE_ON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-        const EYE_OFF = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/><line x1="4" y1="4" x2="20" y2="20"/></svg>';
-        on('ctx-visibility').innerHTML = p.visible ? EYE_ON : EYE_OFF;
+        on('ctx-visibility').innerHTML = p.visible ? EYE_ON_SVG : EYE_OFF_SVG;
         const n = p.constraints.length;
         on('ctx-add-joint').style.display = '';
         on('ctx-rm-joint').style.display = n > MIN_LINKS ? '' : 'none';
@@ -1066,7 +1054,7 @@ function assignPaletteColor(p) {
 }
 
 function addPendulum() {
-    const p = createPendulum(MIN_LINKS, DEFAULT_ANGLE_DEG, DEFAULT_ANGLE_DEG, '#888', '#888');
+    const p = createPendulum(MIN_LINKS, DEFAULT_ANGLE_DEG, '#888', '#888');
     assignPaletteColor(p);
     pendulums.push(p);
     selectPendulum(pendulums.length - 1);
@@ -1115,11 +1103,21 @@ function addJoint() {
     const prev = p.particles[last - 1];
     const dirX = tip.x - prev.x;
     const dirY = tip.y - prev.y;
-    const dist = Math.hypot(dirX, dirY) || 1;
+    const dist = Math.hypot(dirX, dirY);
+    let ux, uy;
+    if (dist > 1e-9) {
+        ux = dirX / dist;
+        uy = dirY / dist;
+    } else {
+        // Degenerate: tip and previous particle coincide — use last known angle
+        const lastAngle = p.thetas[p.thetas.length - 1];
+        ux = Math.sin(lastAngle);
+        uy = Math.cos(lastAngle);
+    }
     const newLen = p.constraints[p.constraints.length - 1].len * LINK_SCALE;
     p.particles.push({
-        x: tip.x + (dirX / dist) * newLen,
-        y: tip.y + (dirY / dist) * newLen,
+        x: tip.x + ux * newLen,
+        y: tip.y + uy * newLen,
     });
     p.constraints.push({ a: last, b: last + 1, len: newLen });
     p.trails.push([]);
@@ -1128,7 +1126,6 @@ function addJoint() {
     p.omegas.push(0);
     p.ls = p.constraints.map(c => c.len);
     p.N = p.ls.length;
-    syncCompatShims(p);
     computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
@@ -1145,7 +1142,6 @@ function removeJoint() {
     p.omegas.pop();
     p.ls = p.constraints.map(c => c.len);
     p.N = p.ls.length;
-    syncCompatShims(p);
     computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
@@ -1186,7 +1182,6 @@ function dragParticle(p, partIdx, mx, my) {
     // Zero all velocities during drag
     p.omegas.fill(0);
 
-    syncCompatShims(p);
     computeParticlePositions(p);
     syncBobPositions(p);
 }
@@ -1279,36 +1274,40 @@ function drawTrail(trail, hexColor, velocityStyle) {
     const b = parseInt(hexColor.slice(5, 7), 16);
 
     const totalSegments = len - 1;
-    const batchSize = Math.ceil(totalSegments / TRAIL_BATCHES);
+    const effectiveBatches = Math.min(TRAIL_BATCHES, totalSegments);
+    const batchSize = Math.ceil(totalSegments / effectiveBatches);
 
-    for (let batch = 0; batch < TRAIL_BATCHES; batch++) {
+    for (let batch = 0; batch < effectiveBatches; batch++) {
         const segStart = batch * batchSize;
         const segEnd = Math.min(segStart + batchSize, totalSegments);
         if (segStart >= segEnd) break;
 
-        const t = (batch + 1) / TRAIL_BATCHES;
+        const t = (batch + 1) / effectiveBatches;
         const alpha = 0.02 + t * 0.88;
+        const rgba = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(4)})`;
 
-        let lineW = 1.5;
         if (velocityStyle) {
-            let sum = 0, count = 0;
-            for (let i = segStart; i <= segEnd; i++) {
-                if (trail[i].s !== undefined) { sum += trail[i].s; count++; }
+            // Per-segment line width based on instantaneous speed
+            for (let i = segStart + 1; i <= segEnd; i++) {
+                const speed = trail[i].s || 0;
+                const lineW = 3.0 - Math.min(speed / 150, 1) * 2.2;
+                ctxA.beginPath();
+                ctxA.moveTo(trail[i - 1].x, trail[i - 1].y);
+                ctxA.lineTo(trail[i].x, trail[i].y);
+                ctxA.strokeStyle = rgba;
+                ctxA.lineWidth = lineW;
+                ctxA.stroke();
             }
-            if (count > 0) {
-                const avg = sum / count;
-                lineW = 3.0 - Math.min(avg / 150, 1) * 2.2;
+        } else {
+            ctxA.beginPath();
+            ctxA.moveTo(trail[segStart].x, trail[segStart].y);
+            for (let i = segStart + 1; i <= segEnd; i++) {
+                ctxA.lineTo(trail[i].x, trail[i].y);
             }
+            ctxA.strokeStyle = rgba;
+            ctxA.lineWidth = 1.5;
+            ctxA.stroke();
         }
-
-        ctxA.beginPath();
-        ctxA.moveTo(trail[segStart].x, trail[segStart].y);
-        for (let i = segStart + 1; i <= segEnd; i++) {
-            ctxA.lineTo(trail[i].x, trail[i].y);
-        }
-        ctxA.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(4)})`;
-        ctxA.lineWidth = lineW;
-        ctxA.stroke();
     }
 }
 
