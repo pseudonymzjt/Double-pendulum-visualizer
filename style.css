@@ -683,6 +683,32 @@ html, body {
     color: #ff6b6b;
 }
 
+/* --- Error container for wiki-reader failures --- */
+
+.error-container {
+    text-align: center;
+    padding: 32px 20px;
+    color: #ff4a4a;
+}
+.error-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 10px;
+    color: #ff4a4a;
+}
+.error-detail {
+    font-size: 12px;
+    opacity: 0.7;
+    margin: 0 0 14px;
+    font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
+    word-break: break-all;
+}
+.error-hint {
+    font-size: 11px;
+    opacity: 0.55;
+    margin: 0;
+}
+
 /* Rendered README body */
 .help-readme-body h1 {
     font-size: 20px;

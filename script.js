@@ -84,6 +84,7 @@ const I18N = {
             guideIndex: '← Back to Guide Index',
             loading: 'Loading README…',
             error: 'Failed to load document.',
+            errorHint: 'Please check if the file exists on the server and matches case-sensitivity.',
         },
     },
     zh: {
@@ -141,6 +142,7 @@ const I18N = {
             guideIndex: '← 返回指南',
             loading: '正在加载 README…',
             error: '文档加载失败。',
+            errorHint: '请检查文件是否存在于服务器上，以及文件名大小写是否匹配。',
         },
     },
 };
@@ -379,20 +381,35 @@ function showHelpOverview() {
 /**
  * Fetch any .md file, parse it, render it in the modal body, and bind
  * internal wiki links so they load in-app instead of navigating away.
+ *
+ * The fetch URL MUST be strictly relative (e.g. ./README.md) and the
+ * filename casing MUST match the repository exactly.  On failure a
+ * detailed user-facing error is shown so "undefined" never reaches
+ * the rendering pipeline.
  */
 function loadAndRenderMD(path) {
     currentDocPath = path;
     const body = document.getElementById('help-body');
     if (!body) return;
-    body.innerHTML = `<p class="help-loading">${I18N[currentLang].loading}</p>`;
+
+    // Show loading state immediately
+    body.innerHTML = `<div class="help-loading">${I18N[currentLang].loading}</div>`;
 
     fetch(path)
-        .then(r => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.text();
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to load ${path} (Status: ${response.status})`);
+            }
+            return response.text();
         })
-        .then(md => {
-            const html = parseSimpleMarkdown(md);
+        .then(markdownText => {
+            // Guard against empty content — don't pass undefined to the parser
+            if (!markdownText) {
+                throw new Error(`Empty document content: ${path}`);
+            }
+
+            // Parse & render
+            const html = parseSimpleMarkdown(markdownText);
             const isRoot = path === './README.md' || path === './README_ZH.md';
             const L = I18N[currentLang];
             const topBar = isRoot
@@ -403,8 +420,13 @@ function loadAndRenderMD(path) {
         })
         .catch(err => {
             console.error('loadAndRenderMD:', err);
-            const L = I18N[currentLang];
-            body.innerHTML = `<p class="help-loading help-error">${L.error}</p>`;
+            body.innerHTML = `
+                <div class="help-back-bar"><span class="help-back-guide">${I18N[currentLang].guideIndex}</span></div>
+                <div class="error-container">
+                    <p class="error-title">⚠️ ${I18N[currentLang].error}</p>
+                    <p class="error-detail">${err.message}</p>
+                    <p class="error-hint">${I18N[currentLang].errorHint}</p>
+                </div>`;
         });
 }
 
