@@ -617,6 +617,11 @@ let lastAngleHTML = '';          // cache to avoid redundant DOM writes
 let dragTarget = null;   // particle index being dragged
 let dragActive = false;
 
+// Drag HUD — polar grid overlay showing snap increments during bob dragging
+let dragHudOpacity = 0;
+const dragHudPivot = { x: 0, y: 0 };
+let dragHudRadius = 0;
+
 // Color palette
 const PALETTE = [
     { c1: '#6080c0', c2: '#00d4ff' },
@@ -1743,6 +1748,12 @@ canvasB.addEventListener('mousedown', (e) => {
         dragTarget = hit.particle;
         dragActive = true;
         canvasB.style.cursor = 'grabbing';
+        // Capture HUD data for polar grid overlay
+        const _p = pendulums[hit.idx];
+        dragHudPivot.x = _p.particles[hit.particle - 1].x;
+        dragHudPivot.y = _p.particles[hit.particle - 1].y;
+        dragHudRadius = _p.ls[hit.particle - 1];
+        dragHudOpacity = 0.01;
     } else {
         selectPendulum(null);
     }
@@ -1789,6 +1800,12 @@ canvasB.addEventListener('touchstart', (e) => {
         selectPendulum(hit.idx);
         dragTarget = hit.particle;
         dragActive = true;
+        // Capture HUD data for polar grid overlay
+        const _p = pendulums[hit.idx];
+        dragHudPivot.x = _p.particles[hit.particle - 1].x;
+        dragHudPivot.y = _p.particles[hit.particle - 1].y;
+        dragHudRadius = _p.ls[hit.particle - 1];
+        dragHudOpacity = 0.01;
     } else {
         selectPendulum(null);
     }
@@ -1904,6 +1921,58 @@ function drawPendulum(p) {
     }
 }
 
+/* ── Drag HUD (polar grid overlay) ──────────────────────────────── */
+
+function drawDragHUD() {
+    if (dragHudOpacity <= 0.001) return;
+    ctxB.save();
+    ctxB.globalAlpha = dragHudOpacity;
+
+    // 1. Dashed circle at rod-length radius from pivot
+    ctxB.beginPath();
+    ctxB.arc(dragHudPivot.x, dragHudPivot.y, dragHudRadius, 0, Math.PI * 2);
+    ctxB.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctxB.lineWidth = 1.2;
+    ctxB.setLineDash([5, 5]);
+    ctxB.stroke();
+
+    // 2. Faint dashed radial lines at 15° increments
+    ctxB.setLineDash([2, 4]);
+    ctxB.lineWidth = 0.8;
+    ctxB.strokeStyle = 'rgba(255,255,255,0.28)';
+    for (let deg = 0; deg < 360; deg += 15) {
+        const rad = deg * Math.PI / 180;
+        const ex = dragHudPivot.x + dragHudRadius * Math.sin(rad);
+        const ey = dragHudPivot.y + dragHudRadius * Math.cos(rad);
+        ctxB.beginPath();
+        ctxB.moveTo(dragHudPivot.x, dragHudPivot.y);
+        ctxB.lineTo(ex, ey);
+        ctxB.stroke();
+    }
+
+    // 3. Snap indicator — bright dot at current snapped angle on the arc
+    ctxB.setLineDash([]);
+    if (dragActive && selectedPendulum !== null) {
+        const p = pendulums[selectedPendulum];
+        if (p && dragTarget !== null && dragTarget - 1 < p.thetas.length) {
+            const snapped = snapAngle(p.thetas[dragTarget - 1]);
+            const sx = dragHudPivot.x + dragHudRadius * Math.sin(snapped);
+            const sy = dragHudPivot.y + dragHudRadius * Math.cos(snapped);
+            ctxB.beginPath();
+            ctxB.arc(sx, sy, 4, 0, Math.PI * 2);
+            ctxB.fillStyle = 'rgba(255,255,255,0.85)';
+            ctxB.fill();
+            ctxB.beginPath();
+            ctxB.arc(sx, sy, 8, 0, Math.PI * 2);
+            ctxB.strokeStyle = 'rgba(255,255,255,0.35)';
+            ctxB.lineWidth = 1.5;
+            ctxB.stroke();
+        }
+    }
+
+    ctxB.restore();
+}
+
 function draw() {
     // Layer A — trails (one per particle; tip = full, inner = shorter)
     ctxA.clearRect(0, 0, cw, ch);
@@ -1921,6 +1990,9 @@ function draw() {
     for (const p of pendulums) {
         drawPendulum(p);
     }
+
+    // Drag HUD overlay — polar grid showing snap increments (before pivot)
+    drawDragHUD();
 
     // Pivot
     ctxB.beginPath();
@@ -2150,6 +2222,22 @@ function copyShareLink() {
 // --- Animation loop ---------------------------------------------
 
 function animate() {
+    // Refresh HUD pivot position during active drag (handles window resize)
+    if (dragActive && selectedPendulum !== null && dragTarget !== null) {
+        const p = pendulums[selectedPendulum];
+        if (p) {
+            dragHudPivot.x = p.particles[dragTarget - 1].x;
+            dragHudPivot.y = p.particles[dragTarget - 1].y;
+            dragHudRadius = p.ls[dragTarget - 1];
+        }
+    }
+    // Fade drag HUD opacity — smooth transition
+    if (dragActive && dragHudOpacity < 0.3) {
+        dragHudOpacity = Math.min(dragHudOpacity + 0.05, 0.3);
+    } else if (!dragActive && dragHudOpacity > 0) {
+        dragHudOpacity = Math.max(dragHudOpacity - 0.15, 0);
+    }
+
     if (!paused) stepPhysics();
     draw();
     updateAngleDisplay();

@@ -1028,3 +1028,62 @@ const xRange = { min: first.step, max: last.step };
 - ✅ 全局参数（重力、阻尼、速度）正确恢复
 - ✅ 隐藏的摆正确恢复为不可见
 - ✅ 损坏的数据优雅降级，无崩溃
+
+---
+
+# 功能 — 拖拽极坐标网格 HUD
+
+## 动机
+拖拽摆锤设置角度时有"磁吸对齐"功能（15°增量），但没有任何视觉反馈显示对齐位置。用户需要猜测摆锤最终位置。
+
+## 设计
+在活动拖拽期间，在 Layer B（摆锤画布）上渲染一个临时的极坐标网格/量角器 HUD 叠加层。
+
+### 状态变量
+```js
+let dragHudOpacity = 0;             // 当前透明度，动画过渡 0 ↔ 0.3
+const dragHudPivot = { x: 0, y: 0 }; // 被拖拽摆锤的父支点（缓存）
+let dragHudRadius = 0;               // 杆长（像素，缓存）
+```
+
+### 拖拽起始时的数据捕获
+`mousedown` 和 `touchstart` 处理程序在拖拽开始时捕获父支点坐标和杆长，存入 `dragHudPivot`/`dragHudRadius`。缓存的数值在释放后的淡出动画中持续使用。
+
+### 拖拽期间的实时刷新
+`animate()` 循环在 `dragActive === true` 时每帧从当前粒子位置刷新 `dragHudPivot`，确保窗口缩放不影响 HUD 位置。
+
+### 透明度动画
+```js
+// 淡入（拖拽中）：
+dragHudOpacity = Math.min(dragHudOpacity + 0.05, 0.3);
+// 淡出（释放后）：
+dragHudOpacity = Math.max(dragHudOpacity - 0.15, 0);
+```
+～125 毫秒淡入，～33 毫秒淡出。
+
+### 绘制（`drawDragHUD()`）
+
+在单个 `ctxB.save/restore` 块中绘制三层，全局 alpha = `dragHudOpacity`：
+
+1. **杆长圆** — 虚线（`setLineDash([5, 5])`），`rgba(255,255,255,0.55)`，1.2px 线宽，以支点为中心、杆长为半径。显示摆锤运动的轨迹弧线。
+
+2. **15° 径向线** — 从支点向外 24 条线，`setLineDash([2, 4])`，`rgba(255,255,255,0.28)`，0.8px 线宽。使用 `sin()` 计算 X、`cos()` 计算 Y，与物理引擎的角度约定（`atan2(dx, dy)`，0 = 正下方）一致。
+
+3. **对齐指示点** — 在弧线上当前 `snapAngle(thetas[dragTarget - 1])` 位置绘制亮白点（4px 半径），带 8px 半透明外圈。仅在活动拖拽期间显示。
+
+### 集成点
+| 位置 | 操作 |
+|---|---|
+| `canvasB mousedown` | 捕获 HUD 数据，设置 `opacity = 0.01` |
+| `canvasB touchstart` | 触屏对应的捕获操作 |
+| `animate()` 起始处 | 实时刷新支点位置，淡入/淡出透明度 |
+| `draw()` 摆锤循环后 | 在绘制枢轴点前调用 `drawDragHUD()` |
+
+### 边界情况
+- **拖拽中窗口缩放**：每帧从当前粒子位置实时刷新 `dragHudPivot`，缓存仅用于淡出阶段。
+- **多摆系统**：支持任意选中摆；通过 `selectedPendulum` 和 `dragTarget` 确定使用哪个链接（link）的支点和半径。
+- **触屏**：`touchstart` 中同样的捕获逻辑，淡入淡出动画与鼠标一致。
+- **零透明度保护**：`drawDragHUD()` 在 `dragHudOpacity <= 0.001` 时立即返回。
+
+## 文件变更
+- **script.js**：新增 88 行。新状态变量 `dragHudOpacity`、`dragHudPivot`、`dragHudRadius`。新函数 `drawDragHUD()`。修改 `mousedown`、`touchstart`、`draw()` 和 `animate()`。
