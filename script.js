@@ -10,8 +10,15 @@ let DAMPING = 0.0003;            // per-frame velocity damping (fraction)
 let speedMultiplier = 1.0;       // physics speed multiplier (0.2–3.0)
 const PHYS_L = 1.5;              // base rod length in simulation units (meters)
 const SUB_STEPS = 8;             // RK4 sub-steps per frame (increased for stability)
-let TRAIL_LENGTH = 1200;  // max trail points — updated dynamically in resizeCanvas
+let TRAIL_LENGTH = 1200;         // current (adaptive) max trail points
+let MAX_TRAIL_LENGTH = 1200;     // user-defined target (set in resizeCanvas)
 const TRAIL_BATCHES = 80;        // opacity gradation levels for the fading line
+
+// FPS Guardian — rolling-window frame rate monitor for adaptive trail length
+const FPS_SAMPLE_SIZE = 30;      // number of frames in the rolling window
+const fpsTimestamps = [];        // circular buffer of rAF timestamps
+let currentFPS = 60;             // most recent reading
+let fpsAdaptCounter = 0;         // throttle: act every N frames
 const CHAOS_OFFSET = 0.01 * Math.PI / 180;  // 0.01° in radians
 const SNAP_DEG = 15;
 const SNAP_THRESHOLD = 5;
@@ -661,7 +668,8 @@ function resizeCanvas() {
 
     const minDim = Math.min(cw, ch);
     const mobile = window.matchMedia("(max-width: 768px)").matches;
-    TRAIL_LENGTH = mobile ? 600 : 1200;
+    MAX_TRAIL_LENGTH = mobile ? 600 : 1200;
+    TRAIL_LENGTH = Math.min(TRAIL_LENGTH, MAX_TRAIL_LENGTH);
     pxPerUnit = minDim * PENDULUM_VIEWPORT_FRACTION / PHYS_L;
 
     PIVOT.x = cw / 2;
@@ -1861,14 +1869,15 @@ function drawTrail(trail, hexColor, velocityStyle) {
                 ctxA.stroke();
             }
         } else {
-            ctxA.beginPath();
-            ctxA.moveTo(trail[segStart].x, trail[segStart].y);
+            // Uniform line width → batch into a single Path2D
+            const path = new Path2D();
+            path.moveTo(trail[segStart].x, trail[segStart].y);
             for (let i = segStart + 1; i <= segEnd; i++) {
-                ctxA.lineTo(trail[i].x, trail[i].y);
+                path.lineTo(trail[i].x, trail[i].y);
             }
             ctxA.strokeStyle = rgba;
             ctxA.lineWidth = 1.5;
-            ctxA.stroke();
+            ctxA.stroke(path);
         }
     }
 }
@@ -2222,6 +2231,24 @@ function copyShareLink() {
 // --- Animation loop ---------------------------------------------
 
 function animate() {
+    // --- FPS Guardian: rolling-window frame-rate monitor ---
+    fpsTimestamps.push(performance.now());
+    while (fpsTimestamps.length > FPS_SAMPLE_SIZE) fpsTimestamps.shift();
+    if (fpsTimestamps.length >= 2) {
+        const elapsed = fpsTimestamps[fpsTimestamps.length - 1] - fpsTimestamps[0];
+        currentFPS = Math.round((fpsTimestamps.length - 1) / elapsed * 1000);
+    }
+
+    // Throttle adaptive adjustment to every 30 frames (~0.5 s at 60 fps)
+    fpsAdaptCounter++;
+    if (fpsAdaptCounter % 30 === 0) {
+        if (currentFPS < 55 && TRAIL_LENGTH > 100) {
+            TRAIL_LENGTH = Math.max(TRAIL_LENGTH - 50, 100);
+        } else if (currentFPS >= 58 && TRAIL_LENGTH < MAX_TRAIL_LENGTH) {
+            TRAIL_LENGTH = Math.min(TRAIL_LENGTH + 10, MAX_TRAIL_LENGTH);
+        }
+    }
+
     // Refresh HUD pivot position during active drag (handles window resize)
     if (dragActive && selectedPendulum !== null && dragTarget !== null) {
         const p = pendulums[selectedPendulum];

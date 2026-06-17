@@ -1231,5 +1231,44 @@ Three layers drawn in a single `ctxB.save/restore` block with `globalAlpha = dra
 - **Touch**: Identical capture logic in `touchstart` — fade animation works the same as mouse.
 - **Zero opacity guard**: `drawDragHUD()` returns immediately if `dragHudOpacity <= 0.001`.
 
+## Feature — Canvas Rendering Optimizations
+
+### 1. FPS Guardian (Adaptive Trail Length)
+
+A lightweight rolling-window frame rate monitor that dynamically adjusts the trail buffer size when rendering performance degrades.
+
+- **Monitor**: Stores the last 30 `performance.now()` timestamps in `fpsTimestamps[]`. Each `animate()` frame pushes a new timestamp, shifts old ones, and calculates `currentFPS` from the window span.
+- **Adaptation**: Every 30 frames (~0.5 s at 60 FPS), throttled via `fpsAdaptCounter`:
+  - `currentFPS < 55` → shrink `TRAIL_LENGTH` by 50 (floor: 100)
+  - `currentFPS >= 58` and below `MAX_TRAIL_LENGTH` → grow by 10 (ceiling: `MAX_TRAIL_LENGTH`)
+- **Separation**: `MAX_TRAIL_LENGTH` holds the user/viewport-defined target (600 mobile, 1200 desktop, set in `resizeCanvas`). `TRAIL_LENGTH` is the live working value that the FPS Guardian oscillates below it.
+- **Cost**: Two array operations + one division per frame; negligible overhead.
+
+### 2. Path2D Batch Rendering
+
+Replaced the per-segment `beginPath()` + `moveTo()` + `lineTo()` + `stroke()` sequence in the non-velocity trail branch with a single native `Path2D` object per opacity batch.
+
+- **Before (non-velocity branch)**: Each batch called `ctxA.beginPath()`, `ctxA.moveTo()`, `ctxA.lineTo()` for each segment, then `ctxA.stroke()`. ~5 JS→native crossings per segment.
+- **After**: Build a `Path2D` with `.moveTo()` / `.lineTo()`, then issue one `ctxA.stroke(path)`. Reduces to ~2 crossings regardless of segment count per batch.
+- **Velocity branch unchanged**: Per-segment `lineWidth` varies continuously, so Path2D cannot batch. Stays on the original per-segment drawing path.
+- **Result**: Fewer context state transitions, lower CPU overhead on long trails.
+
+### Variables Added
+
+| Variable | Type | Purpose |
+|---|---|---|
+| `MAX_TRAIL_LENGTH` | `let` | Viewport-defined ceiling (600 / 1200), set in `resizeCanvas` |
+| `FPS_SAMPLE_SIZE` | `const` | Rolling window size (30 frames) |
+| `fpsTimestamps[]` | `Array` | Timestamp buffer |
+| `currentFPS` | `let` | Latest reading, updated every frame |
+| `fpsAdaptCounter` | `let` | Throttle counter (act every 30 frames) |
+
+### Changed Functions
+| Function | Change |
+|---|---|
+| `drawTrail()` | Non-velocity branch uses `Path2D` + `ctxA.stroke(path)` |
+| `animate()` | FPS rolling-window update + adaptive TRAIL_LENGTH adjustment every 30 frames |
+| `resizeCanvas()` | Sets `MAX_TRAIL_LENGTH` instead of directly overwriting `TRAIL_LENGTH` |
+
 ## Files Changed
-- **script.js**: 88 lines added. New state variables `dragHudOpacity`, `dragHudPivot`, `dragHudRadius`. New function `drawDragHUD()`. Modified `mousedown`, `touchstart`, `draw()`, and `animate()`.
+- **script.js**: 88 lines added for drag HUD (state variables, `drawDragHUD()`, modifications to `mousedown`/`touchstart`/`draw()`/`animate()`). +29 lines for rendering optimizations: FPS Guardian (`MAX_TRAIL_LENGTH`, `fpsTimestamps[]`, `currentFPS`, `fpsAdaptCounter` + adaptive logic in `animate()`) and Path2D batch rendering (rewrote non-velocity branch in `drawTrail()`). Modified `resizeCanvas()` to track `MAX_TRAIL_LENGTH`.

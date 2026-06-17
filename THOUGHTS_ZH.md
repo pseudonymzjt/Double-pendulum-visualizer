@@ -1085,5 +1085,44 @@ dragHudOpacity = Math.max(dragHudOpacity - 0.15, 0);
 - **触屏**：`touchstart` 中同样的捕获逻辑，淡入淡出动画与鼠标一致。
 - **零透明度保护**：`drawDragHUD()` 在 `dragHudOpacity <= 0.001` 时立即返回。
 
+## 特性 — Canvas 渲染优化
+
+### 1. FPS Guardian（自适应轨迹长度）
+
+一个轻量级滚动窗口帧率监视器，在渲染性能下降时动态调整轨迹缓冲区大小。
+
+- **监视**：在 `fpsTimestamps[]` 中保存最近 30 个 `performance.now()` 时间戳。每帧推入新时间戳，移除旧时间戳，从时间跨度计算 `currentFPS`。
+- **自适应**：每 30 帧（60 FPS 下约 0.5 秒）通过 `fpsAdaptCounter` 节流检查：
+  - `currentFPS < 55` → 将 `TRAIL_LENGTH` 减少 50（下限 100）
+  - `currentFPS >= 58` 且低于 `MAX_TRAIL_LENGTH` → 增加 10（上限 `MAX_TRAIL_LENGTH`）
+- **分离**：`MAX_TRAIL_LENGTH` 保存用户/视口定义的目标值（移动端 600，桌面端 1200，在 `resizeCanvas` 中设置）。`TRAIL_LENGTH` 是 FPS Guardian 调节的实时工作值。
+- **开销**：每帧仅两次数组操作 + 一次除法，影响可忽略。
+
+### 2. Path2D 批量渲染
+
+将非速度轨迹分支中逐线段的 `beginPath()` + `moveTo()` + `lineTo()` + `stroke()` 序列替换为每个透明度批次一个原生 `Path2D` 对象。
+
+- **优化前（非速度分支）**：每个批次对各线段调用 `ctxA.beginPath()`、`ctxA.moveTo()`、`ctxA.lineTo()`，然后 `ctxA.stroke()`。每线段约 5 次 JS→原生桥接。
+- **优化后**：构建一个 `Path2D` 后调用一次 `ctxA.stroke(path)`。无论批次内有多少线段，均降至约 2 次桥接。
+- **速度分支不变**：每线段 `lineWidth` 连续变化，Path2D 无法批量处理，保留逐线段绘制。
+- **效果**：减少上下文状态切换，长轨迹下 CPU 开销显著降低。
+
+### 新增变量
+
+| 变量 | 类型 | 用途 |
+|---|---|---|
+| `MAX_TRAIL_LENGTH` | `let` | 视口定义的上限（600/1200），在 `resizeCanvas` 中设置 |
+| `FPS_SAMPLE_SIZE` | `const` | 滚动窗口大小（30 帧） |
+| `fpsTimestamps[]` | `Array` | 时间戳缓冲区 |
+| `currentFPS` | `let` | 最新 FPS 读数，每帧更新 |
+| `fpsAdaptCounter` | `let` | 节流计数器（每 30 帧触发一次） |
+
+### 变更函数
+| 函数 | 变更 |
+|---|---|
+| `drawTrail()` | 非速度分支使用 `Path2D` + `ctxA.stroke(path)` |
+| `animate()` | FPS 滚动窗口更新 + 每 30 帧自适应 TRAIL_LENGTH 调整 |
+| `resizeCanvas()` | 设置 `MAX_TRAIL_LENGTH` 而非直接覆写 `TRAIL_LENGTH` |
+
 ## 文件变更
-- **script.js**：新增 88 行。新状态变量 `dragHudOpacity`、`dragHudPivot`、`dragHudRadius`。新函数 `drawDragHUD()`。修改 `mousedown`、`touchstart`、`draw()` 和 `animate()`。
+- **script.js**：拖拽 HUD 新增 88 行（状态变量、`drawDragHUD()`、修改 `mousedown`/`touchstart`/`draw()`/`animate()`）。渲染优化新增 29 行：FPS Guardian（`MAX_TRAIL_LENGTH`、`fpsTimestamps[]`、`currentFPS`、`fpsAdaptCounter` + `animate()` 中自适应逻辑）和 Path2D 批量渲染（重写 `drawTrail()` 非速度分支）。修改 `resizeCanvas()` 以追踪 `MAX_TRAIL_LENGTH`。
