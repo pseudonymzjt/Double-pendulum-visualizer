@@ -25,17 +25,17 @@
     <div id="angle-display"></div>
     <div id="params-panel">
         <div class="param-row">
-            <label>Gravity</label>
-            <input type="range" id="param-gravity" min="2" max="25" step="0.1" value="11.0">
+            <label id="label-gravity">Gravity</label>
+            <input type="range" id="param-gravity" min="0" max="25" step="0.1" value="11.0">
             <span class="param-value" id="grav-value">11.0</span>
         </div>
         <div class="param-row">
-            <label>Damping</label>
+            <label id="label-damping">Damping</label>
             <input type="range" id="param-damping" min="0" max="0.01" step="0.0001" value="0.0003">
             <span class="param-value" id="damp-value">0.0003</span>
         </div>
         <div class="param-row">
-            <label>Speed</label>
+            <label id="label-speed">Speed</label>
             <input type="range" id="param-speed" min="0.2" max="3.0" step="0.1" value="1.0">
             <span class="param-value" id="speed-value">1.0×</span>
         </div>

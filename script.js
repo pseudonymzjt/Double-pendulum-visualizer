@@ -82,6 +82,9 @@ const I18N = {
         guide:  '📖 Guide',
         langBtn:'中',
         langTip:'切换到中文',
+        paramGravity: 'Gravity',
+        paramDamping: 'Damping',
+        paramSpeed: 'Speed',
         phaseTitle: (pid) => `Phase Space — Pendulum ${pid}  θ vs ω     cycle`,
         energyTitle: 'Energy — KE / PE / E_total',
         settingsTitle: 'Settings',
@@ -142,6 +145,9 @@ const I18N = {
         guide:  '📖 指南',
         langBtn:'EN',
         langTip:'Switch to English',
+        paramGravity: '重力',
+        paramDamping: '阻尼',
+        paramSpeed: '速度',
         phaseTitle: (pid) => `相空间 — 摆 ${pid}  θ vs ω     周期`,
         energyTitle: '能量 — 动能 / 势能 / 总能',
         settingsTitle: '设置',
@@ -1524,6 +1530,9 @@ function updateControls() {
     on('btn-save').textContent = L.save;
     on('btn-share').textContent = L.share;
     on('btn-help').textContent = L.guide;
+    on('label-gravity').textContent = L.paramGravity;
+    on('label-damping').textContent = L.paramDamping;
+    on('label-speed').textContent = L.paramSpeed;
     on('btn-add').title = pendulums.length >= MAX_PENDULUMS ? L.addTitleMax : L.addTitle;
     on('btn-add').disabled = pendulums.length >= MAX_PENDULUMS;
     on('btn-gear').title = L.settingsTitle;
@@ -2200,7 +2209,7 @@ function restoreState(state) {
     selectedPendulum = null;
 
     // --- Apply global physics ---
-    G = Math.max(2, Math.min(25, state.g));
+    G = Math.max(0, Math.min(25, state.g));
     DAMPING = Math.max(0, Math.min(0.01, state.d));
     speedMultiplier = Math.max(0.2, Math.min(3.0, state.s));
 
