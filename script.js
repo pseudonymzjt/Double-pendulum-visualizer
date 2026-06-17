@@ -38,6 +38,8 @@ const I18N = {
         metrics:'📊 Metrics [M]',
         clear:  '✕ Clear Trail',
         save:   '⬇ Save',
+        share:  '🔗 Share',
+        shareCopied: '✓ Link Copied!',
         guide:  '📖 Guide',
         langBtn:'中',
         langTip:'切换到中文',
@@ -96,6 +98,8 @@ const I18N = {
         metrics:'📊 图表 [M]',
         clear:  '✕ 清除轨迹',
         save:   '⬇ 保存',
+        share:  '🔗 分享',
+        shareCopied: '✓ 已复制!',
         guide:  '📖 指南',
         langBtn:'EN',
         langTip:'Switch to English',
@@ -1339,6 +1343,7 @@ function toggleChaos() {
         chaosMode = true;
     }
     updateControls();
+    saveStateToURL();
 }
 
 function resetSimulation() {
@@ -1359,6 +1364,7 @@ function resetSimulation() {
     }
     clearMetrics();
     updateControls();
+    saveStateToURL();
 }
 
 function clearTrails() {
@@ -1437,6 +1443,7 @@ function updateControls() {
     on('btn-metrics').textContent = L.metrics;
     on('btn-clear').textContent = L.clear;
     on('btn-save').textContent = L.save;
+    on('btn-share').textContent = L.share;
     on('btn-help').textContent = L.guide;
     on('btn-add').title = pendulums.length >= MAX_PENDULUMS ? L.addTitleMax : L.addTitle;
     on('btn-add').disabled = pendulums.length >= MAX_PENDULUMS;
@@ -1478,16 +1485,19 @@ on('btn-save', 'click', saveArtwork);
 on('param-gravity', 'input', (e) => {
     G = parseFloat(e.target.value);
     on('grav-value').textContent = G.toFixed(1);
+    saveStateToURL();
 });
 
 on('param-damping', 'input', (e) => {
     DAMPING = parseFloat(e.target.value);
     on('damp-value').textContent = DAMPING.toFixed(4);
+    saveStateToURL();
 });
 
 on('param-speed', 'input', (e) => {
     speedMultiplier = parseFloat(e.target.value);
     on('speed-value').textContent = speedMultiplier.toFixed(1) + '×';
+    saveStateToURL();
 });
 on('btn-add', 'click', addPendulum);
 on('btn-metrics', 'click', toggleMetricsPanel);
@@ -1586,6 +1596,7 @@ function addPendulum() {
     pendulums.push(p);
     selectPendulum(pendulums.length - 1);
     updateControls();
+    saveStateToURL();
 }
 
 function selectPendulum(idx) {
@@ -1604,6 +1615,7 @@ function deleteSelected() {
     selectPendulum(null);
     if (chaosMode && pendulums.length < 2) chaosMode = false;
     updateControls();
+    saveStateToURL();
 }
 
 function cycleColor() {
@@ -1612,12 +1624,14 @@ function cycleColor() {
     paletteIdx = p._paletteIdx + 1;
     assignPaletteColor(p);
     updateControls();
+    saveStateToURL();
 }
 
 function toggleVisibility() {
     if (selectedPendulum === null) return;
     pendulums[selectedPendulum].visible = !pendulums[selectedPendulum].visible;
     updateControls();
+    saveStateToURL();
 }
 
 // --- Joint modifiers (N-link) -----------------------------------
@@ -1657,6 +1671,7 @@ function addJoint() {
     computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
+    saveStateToURL();
 }
 
 function removeJoint() {
@@ -1673,6 +1688,7 @@ function removeJoint() {
     computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
+    saveStateToURL();
 }
 
 // --- Selection & drag -------------------------------------------
@@ -1750,6 +1766,7 @@ document.addEventListener('mouseup', () => {
         dragActive = false;
         dragTarget = null;
         canvasB.style.cursor = 'default';
+        saveStateToURL();  // save state after drag-set angles
     }
 });
 
@@ -1912,6 +1929,224 @@ function draw() {
     ctxB.fill();
 }
 
+// --- State Serialization & URL Sharing -----------------------------
+
+const STORAGE_VERSION = 1;
+
+/**
+ * Compact property names keep the encoded string short:
+ *   v — version (for future format migration)
+ *   g — gravity
+ *   d — damping
+ *   s — speed multiplier
+ *   p — pendulums array
+ *     n — number of links
+ *     t — thetas (degrees, one per link)
+ *     c — palette index
+ *     v — visibility flag
+ */
+function serializeState() {
+    const pendulumsData = pendulums.map(p => ({
+        n: p.N,
+        t: p.thetas.map(th => +(th * 180 / Math.PI).toFixed(2)),
+        c: p._paletteIdx,
+        v: p.visible,
+    }));
+    return {
+        v: STORAGE_VERSION,
+        g: +G.toFixed(2),
+        d: +DAMPING.toFixed(6),
+        s: +speedMultiplier.toFixed(2),
+        p: pendulumsData,
+    };
+}
+
+/**
+ * URL-safe Base64 encoding with proper UTF-8 handling.
+ * btoa() throws on characters outside the Latin-1 range, so we first
+ * encode the JSON string as UTF-8 via encodeURIComponent, then unescape
+ * the percent-encoded bytes into a Latin-1 string that btoa can handle.
+ */
+function encodeState(state) {
+    const json = JSON.stringify(state);
+    const latin1 = unescape(encodeURIComponent(json));
+    return btoa(latin1);
+}
+
+/**
+ * Reverse of encodeState — decode URL-safe Base64 back to a state object.
+ * Handles potential Unicode decoding errors gracefully.
+ */
+function decodeState(encoded) {
+    const latin1 = atob(encoded);
+    const utf8 = decodeURIComponent(escape(latin1));
+    return JSON.parse(utf8);
+}
+
+/**
+ * Serialize the current simulator state and write it to the URL hash
+ * using history.replaceState (no extra browser history entry).
+ * Silently catches encoding failures so they never crash the app.
+ */
+function saveStateToURL() {
+    try {
+        const state = serializeState();
+        const encoded = encodeState(state);
+        const newHash = '#state=' + encoded;
+        if (window.location.hash !== newHash) {
+            history.replaceState(null, '', newHash);
+        }
+    } catch (e) {
+        console.warn('saveStateToURL: failed to encode state:', e);
+    }
+}
+
+/**
+ * Attempt to load and restore state from window.location.hash.
+ * Returns true if a state was found and successfully restored,
+ * false otherwise (no hash, corrupt data, or validation failure).
+ */
+function tryLoadStateFromURL() {
+    const hash = window.location.hash;
+    if (!hash || !hash.startsWith('#state=')) return false;
+
+    const encoded = hash.slice(7); // strip '#state='
+    if (!encoded) return false;
+
+    let state;
+    try {
+        state = decodeState(encoded);
+    } catch (e) {
+        console.warn('tryLoadStateFromURL: corrupt encoding, falling back to defaults:', e);
+        return false;
+    }
+
+    return restoreState(state);
+}
+
+/**
+ * Validate and apply a deserialized state object to the simulator.
+ * Every numeric field is clamped to a safe range; NaN/Infinity fields
+ * are rejected.  Returns true on success, false if validation fails.
+ */
+function restoreState(state) {
+    // --- Top-level validation ---
+    if (!state || typeof state !== 'object') return false;
+    if (state.v !== STORAGE_VERSION) return false;
+
+    // --- Global physics parameters (clamped to slider ranges) ---
+    if (typeof state.g !== 'number' || !isFinite(state.g)) return false;
+    if (typeof state.d !== 'number' || !isFinite(state.d)) return false;
+    if (typeof state.s !== 'number' || !isFinite(state.s)) return false;
+
+    if (!Array.isArray(state.p) || state.p.length === 0 || state.p.length > MAX_PENDULUMS) {
+        return false;
+    }
+
+    // --- Tear down existing state ---
+    pendulums.length = 0;
+    paletteIdx = 0;
+    chaosMode = false;
+    paused = false;
+    selectedPendulum = null;
+
+    // --- Apply global physics ---
+    G = Math.max(2, Math.min(25, state.g));
+    DAMPING = Math.max(0, Math.min(0.01, state.d));
+    speedMultiplier = Math.max(0.2, Math.min(3.0, state.s));
+
+    // Sync slider UI elements
+    on('param-gravity').value = G;
+    on('grav-value').textContent = G.toFixed(1);
+    on('param-damping').value = DAMPING;
+    on('damp-value').textContent = DAMPING.toFixed(4);
+    on('param-speed').value = speedMultiplier;
+    on('speed-value').textContent = speedMultiplier.toFixed(1) + '×';
+
+    // --- Recreate each pendulum ---
+    for (const pd of state.p) {
+        // Validate pendulum descriptor
+        if (!pd || typeof pd !== 'object') continue;
+        const nLinks = Math.max(MIN_LINKS, Math.min(MAX_LINKS,
+            (typeof pd.n === 'number' && isFinite(pd.n)) ? pd.n : MIN_LINKS));
+
+        // First angle is used for buildChain — default to 135° if missing
+        const defaultDeg = (Array.isArray(pd.t) && pd.t.length > 0 && typeof pd.t[0] === 'number' && isFinite(pd.t[0]))
+            ? pd.t[0] : DEFAULT_ANGLE_DEG;
+        const clampedDefault = Math.max(0, Math.min(360, defaultDeg));
+
+        const p = createPendulum(nLinks, clampedDefault, '#888', '#888');
+
+        // Restore individual per-joint angles
+        if (Array.isArray(pd.t)) {
+            for (let i = 0; i < Math.min(p.N, pd.t.length); i++) {
+                if (typeof pd.t[i] === 'number' && isFinite(pd.t[i])) {
+                    p.thetas[i] = (pd.t[i] % 360) * Math.PI / 180;
+                }
+            }
+        }
+
+        // Restore palette colour
+        const cRaw = (typeof pd.c === 'number' && isFinite(pd.c)) ? Math.floor(pd.c) : paletteIdx;
+        const cIdx = ((cRaw % PALETTE.length) + PALETTE.length) % PALETTE.length;
+        const pal = PALETTE[cIdx];
+        p.color1 = pal.c1;
+        p.color2 = pal.c2;
+        p._paletteIdx = cIdx;
+        // Advance global paletteIdx so new pendulums don't reuse this colour
+        if (cRaw >= paletteIdx) paletteIdx = cRaw + 1;
+
+        // Restore visibility
+        p.visible = pd.v !== false;
+
+        computeParticlePositions(p);
+        syncBobPositions(p);
+
+        pendulums.push(p);
+    }
+
+    // Guard: if no pendulums survived validation, trigger default
+    if (pendulums.length === 0) return false;
+
+    // Update UI
+    resizeCanvas();
+    updateControls();
+    clearTrails();
+    clearMetrics();
+
+    return true;
+}
+
+/**
+ * Copy the current shareable URL (with encoded state) to the clipboard.
+ * Shows brief "Copied!" feedback on the button before reverting.
+ */
+function copyShareLink() {
+    // Ensure the URL hash is current
+    saveStateToURL();
+
+    const url = window.location.href;
+    const btn = on('btn-share');
+    const origText = btn.textContent;
+
+    navigator.clipboard.writeText(url).then(() => {
+        // Show confirmation
+        btn.textContent = I18N[currentLang].shareCopied;
+        btn.style.color = 'rgba(100, 255, 180, 0.9)';
+        setTimeout(() => {
+            btn.textContent = origText;
+            btn.style.color = '';
+        }, 1800);
+    }).catch(() => {
+        // Clipboard API unavailable — fall back to a console message
+        console.warn('Clipboard API unavailable. Share URL:\n' + url);
+        btn.textContent = '⚠ Fallback';
+        setTimeout(() => {
+            btn.textContent = origText;
+        }, 1200);
+    });
+}
+
 // --- Animation loop ---------------------------------------------
 
 function animate() {
@@ -1927,7 +2162,10 @@ function animate() {
 
 // --- Bootstrap --------------------------------------------------
 
-addPendulum();
+// Try restoring a shared state from URL hash first; fall back to defaults
+if (!tryLoadStateFromURL()) {
+    addPendulum();
+}
 resizeCanvas();
 updateControls();
 // Paint an initial frame synchronously so the pendulum is visible
@@ -1935,3 +2173,6 @@ updateControls();
 draw();
 updateAngleDisplay();
 animate();
+
+// Bind the share-link button after the DOM / i18n are ready.
+on('btn-share', 'click', copyShareLink);

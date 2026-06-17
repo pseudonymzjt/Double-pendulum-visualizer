@@ -1065,3 +1065,112 @@ Controls (table) → click "View Full Guide →" → README.md
 - Links already on a sub-page (e.g., `AI_DISCLOSURE.md` → `AI_DISCLOSURE_ZH.md`) are recursively intercepted — the chain works to arbitrary depth.
 - Loading errors show an error message; the modal returns to overview on re-open.
 - Language switch resets to the controls overview (no persisted state across modal toggles).
+
+---
+
+# Feature — State Serialization, URL Sharing & Restoration
+
+## Motivation
+The user wanted to be able to share specific pendulum configurations with others via a URL. No external libraries allowed — only native Web APIs.
+
+## Requirements
+1. **Serialize** the full simulator state into a compact JSON structure
+2. **Encode** it into a URL-safe Base64 string and store it in the URL hash
+3. **"Copy Share Link"** button with clipboard feedback
+4. **Restore** state on page load from the URL hash with graceful error handling
+
+## Design
+
+### Serialization Format
+
+Compact single-letter keys to keep the encoded URL short:
+
+```json
+{
+  "v": 1,        // format version
+  "g": 11.0,     // gravity
+  "d": 0.0003,   // damping
+  "s": 1.0,      // speed multiplier
+  "p": [         // pendulums array
+    { "n": 2, "t": [135, 135], "c": 0, "v": true }
+  ]
+}
+```
+
+Per-pendulum fields: `n` = link count, `t` = angles (degrees, one per link), `c` = palette index, `v` = visibility.
+
+Not serialized: angular velocities `omegas` (always restored to 0), trail data (transient visual), pixel-scale-dependent lengths `ls[]` (rebuilt from `PHYS_L * pxPerUnit` on resize).
+
+### UTF-8 Safe Base64
+
+`btoa()` throws on characters outside Latin-1. Color hex codes (`#6080c0`) contain `#` which is ASCII, but UI strings (Chinese labels, emoji) need proper handling:
+
+```js
+// Encode
+const latin1 = unescape(encodeURIComponent(JSON.stringify(state)));
+const encoded = btoa(latin1);
+
+// Decode
+const utf8 = decodeURIComponent(escape(atob(encoded)));
+const state = JSON.parse(utf8);
+```
+
+### URL Hash Strategy
+
+- `history.replaceState` updates the hash without creating a browser history entry
+- Hash only updates when the value changes to avoid unnecessary `replaceState` calls
+- Stored as `#state=<base64>` — clean, no query parameters needed
+
+### Auto-Save Integration Points
+
+`saveStateToURL()` is called from every state-mutating operation:
+- Slider `input` events (gravity, damping, speed)
+- `addPendulum()`, `deleteSelected()`, `cycleColor()`, `toggleVisibility()`
+- `addJoint()`, `removeJoint()`
+- `resetSimulation()`, `toggleChaos()`
+- Drag-end (`mouseup` after active drag)
+
+Not called: `selectPendulum()` (UI selection only), `clearTrails()` (visual only), every frame of `animate()` (running simulation state is not preserved).
+
+### Restoration Error Handling
+
+`restoreState(state)` validates every field:
+- Top-level: `state` is an object, `v` matches version
+- Physics: `g`, `d`, `s` are finite numbers → clamped to slider range
+- Pendulums: array exists, length ≤ MAX_PENDULUMS, each entry validated
+- Per-pendulum: `n` clamped to [MIN_LINKS, MAX_LINKS], `t` values checked with `isFinite()`, `c` modulo-wrapped to palette, `v` defaults to `true`
+- Guard: empty pendulum array after validation → return false → bootstrap creates default
+
+All decoding/parsing errors are caught by try/catch in `tryLoadStateFromURL()` → returns false.
+
+### Share Button UX
+
+- Click → `saveStateToURL()` ensures URL is current → `navigator.clipboard.writeText(url)` 
+- Success: button text changes to "✓ Link Copied!" for 1.8s with green tint
+- Failure: logs URL to console and shows "⚠ Fallback" briefly
+- Button maintains I18N (EN: "🔗 Share", ZH: "🔗 分享")
+
+## Files Changed
+
+- **index.html**: Added `<button id="btn-share">🔗 Share</button>` in controls bar
+- **script.js**: 
+  - Added I18N entries for share/copied in both EN and ZH
+  - Added ~200 lines of state serialization code (inserted before Animation loop)
+  - Added `saveStateToURL()` calls to 10 mutation points throughout the file
+  - Modified bootstrap to try URL state restoration before creating default pendulum
+
+## Verification (all passing)
+
+| Scenario | Result |
+|---|---|
+| Fresh page load with state hash → 2 pendulums, 5+3 links | ✅ |
+| Global physics params restored (G=15.5, Damping=0.001, Speed=0.5) | ✅ |
+| Hidden pendulum visibility preserved (`visible: false`) | ✅ |
+| Corrupt base64 hash → falls back to 1 default pendulum | ✅ |
+| Valid base64 but invalid JSON → falls back to defaults | ✅ |
+| Valid JSON but missing required fields → falls back to defaults | ✅ |
+| Clipboard copy → fallback works in headless Chrome | ✅ |
+| Round-trip encode/decode identical (`state = decode(encode(state))`) | ✅ |
+| Auto-save on slider change | ✅ |
+| Auto-save on add/delete pendulum | ✅ |
+| Auto-save on drag-end | ✅ |
