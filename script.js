@@ -28,6 +28,38 @@ const MAX_LINKS = 8;             // maximum joints per pendulum for RK4 stabilit
 const MAX_PENDULUMS = 8;         // maximum number of independent pendulums
 const HIT_RADIUS = 22;           // px — bob grab radius
 const PENDULUM_VIEWPORT_FRACTION = 0.18;  // fraction of min viewport dimension
+
+/**
+ * Pre-allocate all working buffers as Float64Array (zero GC in hot loop).
+ * Pendulums own one scratch object each; reused every frame across all
+ * RK4 sub-steps. All arrays sized for MAX_LINKS (only first N used).
+ */
+function createScratch() {
+    const N = MAX_LINKS;
+    return {
+        // Solver: flat row-major N×N matrices, N-vectors
+        M:     new Float64Array(N * N),
+        L:     new Float64Array(N * N),   // Cholesky factor
+        b:     new Float64Array(N),       // RHS
+        y:     new Float64Array(N),       // forward-sub scratch
+        alpha: new Float64Array(N),       // result accelerations
+        // RK4 sub-step initial-state save
+        t0:    new Float64Array(N),
+        o0:    new Float64Array(N),
+        // RK4 slope vectors (k1–k4 for θ and ω)
+        k1_t:  new Float64Array(N),
+        k1_o:  new Float64Array(N),
+        k2_t:  new Float64Array(N),
+        k2_o:  new Float64Array(N),
+        k3_t:  new Float64Array(N),
+        k3_o:  new Float64Array(N),
+        k4_t:  new Float64Array(N),
+        k4_o:  new Float64Array(N),
+        // Intermediate evaluation state (reused for k2/k3/k4 inputs)
+        tw:    new Float64Array(N),       // θ_work
+        ow:    new Float64Array(N),       // ω_work
+    };
+}
 const METRICS_CAPACITY = 300;    // rolling buffer for analysis plots
 let globalMetricsStep = 0;       // monotonically increasing step counter for X-axis
 
@@ -527,8 +559,12 @@ function createPendulum(nLinks, theta1Deg, color1, color2, copyFrom) {
     const rad = theta1Deg * Math.PI / 180;
     const thetas = new Array(N).fill(rad);
     const omegas = new Array(N).fill(0);
+    // JIT-friendly flat arrays (Float64Array) for the hot physics loop
+    const scratch = createScratch();
+    const ls_f64 = new Float64Array(MAX_LINKS);
+    for (let i = 0; i < N; i++) ls_f64[i] = ls[i];
     const p = {
-        thetas, omegas, ls, N,
+        thetas, omegas, ls, N, scratch, ls_f64,
         particles: chain.particles,
         constraints: chain.constraints,
         bob1X: 0, bob1Y: 0,
@@ -605,6 +641,7 @@ function rebuildChain(p, nLinks, thetaDeg) {
     p.constraints = chain.constraints;
     p.ls = chain.constraints.map(c => c.len);
     p.N = p.ls.length;
+    if (p.ls_f64) p.ls_f64.set(p.ls);  // sync Float64Array hot-path copy
     // Ensure trails array matches particle count
     while (p.trails.length < chain.particles.length) p.trails.push([]);
     while (p.trails.length > chain.particles.length) p.trails.pop();
@@ -685,6 +722,7 @@ function resizeCanvas() {
         p.constraints = chain.constraints;
         p.ls = chain.constraints.map(c => c.len);
         p.N = p.ls.length;
+        p.ls_f64.set(p.ls);
         computeParticlePositions(p);
         syncBobPositions(p);
     }
@@ -696,117 +734,145 @@ window.addEventListener('resize', resizeCanvas);
 // --- General N-Pendulum Lagrangian Physics ----------------------
 
 /**
- * Build the N×N mass matrix M and RHS vector b, then solve M·α = b
- * using Gaussian elimination (full trigonometric coupling, no
- * small-angle approximations).
- *
  * For N links (0-indexed i,j = 0…N-1):
  *
  *   Aᵢⱼ = lᵢ lⱼ (N − max(i,j))          (equal masses)
- *   Mᵢⱼ = Aᵢⱼ cos(θᵢ − θⱼ)
+ *   Mᵢⱼ = Aᵢⱼ cos(θᵢ − θⱼ)               → symmetric positive-definite
  *
  *   bᵢ  = − Σⱼ≠ᵢ Aᵢⱼ sin(θᵢ−θⱼ) ωⱼ²
  *         − g × lᵢ × (N−i) × sin(θᵢ)
  *
- * M is symmetric positive-definite → Gaussian elimination without
- * pivoting is safe, but we still use partial pivoting for robustness.
+ * M is SPD → solved via Cholesky decomposition (M = L·Lᵀ) which
+ * requires ~N³/3 flops vs ~2N³/3 for Gaussian elimination and
+ * needs no pivoting.
+ * ─────────────────────────────────────────────────────────── */
+
+/**
+ * Cholesky factorisation: M = L·Lᵀ.
+ * L is lower-triangular, stored flat row-major in scratch.L.
+ * M is read from scratch.M (not modified).  O(N³/3).
  */
-function derivativesArray(thetas, omegas, ls) {
-    const N = thetas.length;
-    const gPx = G * pxPerUnit;
+function choleskyFactor(N, L, M) {
+    L.fill(0);
+    for (let j = 0; j < N; j++) {
+        const jN = j * N;
+        let diagSum = 0;
+        for (let k = 0; k < j; k++) { const v = L[jN + k]; diagSum += v * v; }
+        L[jN + j] = Math.sqrt(M[jN + j] - diagSum);
+        const L_jj = L[jN + j];
+        for (let i = j + 1; i < N; i++) {
+            const iN = i * N;
+            let offSum = 0;
+            for (let k = 0; k < j; k++) offSum += L[iN + k] * L[jN + k];
+            L[iN + j] = (M[iN + j] - offSum) / L_jj;
+        }
+    }
+}
 
-    // Build M and b
-    const M = [];
-    const b = new Array(N);
+/** Forward (L·y = b) then backward (Lᵀ·α = y) substitution. */
+function choleskySolve(N, L, b, y, alpha) {
     for (let i = 0; i < N; i++) {
-        M[i] = new Array(N);
-        let bi = 0;
-        for (let j = 0; j < N; j++) {
-            const Aij = ls[i] * ls[j] * (N - Math.max(i, j));
-            const dTheta = thetas[i] - thetas[j];
-            M[i][j] = Aij * Math.cos(dTheta);
-            if (j !== i) {
-                bi -= Aij * Math.sin(dTheta) * omegas[j] * omegas[j];
-            }
-        }
-        bi -= gPx * ls[i] * (N - i) * Math.sin(thetas[i]);
-        b[i] = bi;
+        const iN = i * N;
+        let sum = b[i];
+        for (let j = 0; j < i; j++) sum -= L[iN + j] * y[j];
+        y[i] = sum / L[iN + i];
     }
-
-    // Gaussian elimination with partial pivoting
-    const A = M.map(row => [...row]);
-    const x = [...b];
-
-    for (let col = 0; col < N; col++) {
-        // Partial pivoting
-        let maxVal = Math.abs(A[col][col]), maxRow = col;
-        for (let row = col + 1; row < N; row++) {
-            if (Math.abs(A[row][col]) > maxVal) { maxVal = Math.abs(A[row][col]); maxRow = row; }
-        }
-        if (maxRow !== col) {
-            [A[col], A[maxRow]] = [A[maxRow], A[col]];
-            [x[col], x[maxRow]] = [x[maxRow], x[col]];
-        }
-
-        const pivot = A[col][col];
-        if (Math.abs(pivot) < 1e-14) continue;
-
-        for (let row = col + 1; row < N; row++) {
-            const factor = A[row][col] / pivot;
-            for (let j = col; j < N; j++) A[row][j] -= factor * A[col][j];
-            x[row] -= factor * x[col];
-        }
-    }
-
-    // Back substitution
-    const alpha = new Array(N);
     for (let i = N - 1; i >= 0; i--) {
-        let sum = x[i];
-        for (let j = i + 1; j < N; j++) sum -= A[i][j] * alpha[j];
-        alpha[i] = sum / A[i][i];
+        let sum = y[i];
+        for (let j = i + 1; j < N; j++) sum -= L[j * N + i] * alpha[j];
+        alpha[i] = sum / L[i * N + i];
     }
     return alpha;
 }
 
-/** RK4 integration for an N-pendulum state (thetas, omegas). */
+/**
+ * Build M and b into pre-allocated scratch buffers, then solve M·α = b
+ * via Cholesky.  Zero allocations — all buffers live on p.scratch.
+ */
+function computeAccel(thetas, omegas, ls, N, s) {
+    const M = s.M, b = s.b;
+    const gPx = G * pxPerUnit;
+
+    for (let i = 0; i < N; i++) {
+        const iN = i * N;
+        const li = ls[i];
+        const Ni = N - i;
+        const sinTh_i = Math.sin(thetas[i]);
+        let bi = 0;
+        for (let j = 0; j < N; j++) {
+            const Aij = li * ls[j] * (N - (i > j ? i : j));      // N−max(i,j)
+            const dTheta = thetas[i] - thetas[j];
+            M[iN + j] = Aij * Math.cos(dTheta);
+            if (j !== i) bi -= Aij * Math.sin(dTheta) * omegas[j] * omegas[j];
+        }
+        b[i] = bi - gPx * li * Ni * sinTh_i;
+    }
+
+    choleskyFactor(N, s.L, M);
+    return choleskySolve(N, s.L, b, s.y, s.alpha);
+}
+
+/**
+ * RK4 integration using pre-allocated Float64Array scratch buffers.
+ * Zero allocations inside the hot loop — every working vector is a
+ * named view into p.scratch.
+ */
 function rk4Step(p, dt) {
     const h = dt / SUB_STEPS;
     const N = p.N;
+    const s = p.scratch;
+    const th = p.thetas;
+    const om = p.omegas;
+    const ls = p.ls_f64;
 
-    for (let s = 0; s < SUB_STEPS; s++) {
-        const t0 = p.thetas.slice();
-        const o0 = p.omegas.slice();
-        const ls = p.ls;
+    for (let sub = 0; sub < SUB_STEPS; sub++) {
+        // ── save sub-step initial state ──
+        for (let i = 0; i < N; i++) { s.t0[i] = th[i]; s.o0[i] = om[i]; }
 
-        // k1
-        const a1 = derivativesArray(t0, o0, ls);
-        const k1_t = a1.map((_, i) => h * o0[i]);
-        const k1_o = a1.map(a => h * a);
-
-        // k2 (half-step)
-        const t2 = t0.map((t, i) => t + k1_t[i] / 2);
-        const o2 = o0.map((o, i) => o + k1_o[i] / 2);
-        const a2 = derivativesArray(t2, o2, ls);
-        const k2_t = a2.map((_, i) => h * (o0[i] + k1_o[i] / 2));
-        const k2_o = a2.map(a => h * a);
-
-        // k3
-        const t3 = t0.map((t, i) => t + k2_t[i] / 2);
-        const o3 = o0.map((o, i) => o + k2_o[i] / 2);
-        const a3 = derivativesArray(t3, o3, ls);
-        const k3_t = a3.map((_, i) => h * (o0[i] + k2_o[i] / 2));
-        const k3_o = a3.map(a => h * a);
-
-        // k4 (full step)
-        const t4 = t0.map((t, i) => t + k3_t[i]);
-        const o4 = o0.map((o, i) => o + k3_o[i]);
-        const a4 = derivativesArray(t4, o4, ls);
-        const k4_t = a4.map((_, i) => h * (o0[i] + k3_o[i]));
-        const k4_o = a4.map(a => h * a);
-
+        // ── k1 ──
+        const a1 = computeAccel(s.t0, s.o0, ls, N, s);
         for (let i = 0; i < N; i++) {
-            p.thetas[i] += (k1_t[i] + 2 * k2_t[i] + 2 * k3_t[i] + k4_t[i]) / 6;
-            p.omegas[i] += (k1_o[i] + 2 * k2_o[i] + 2 * k3_o[i] + k4_o[i]) / 6;
+            s.k1_t[i] = h * s.o0[i];
+            s.k1_o[i] = h * a1[i];
+        }
+
+        // ── k2 (half-step) ──
+        for (let i = 0; i < N; i++) {
+            s.tw[i] = s.t0[i] + s.k1_t[i] / 2;
+            s.ow[i] = s.o0[i] + s.k1_o[i] / 2;
+        }
+        const a2 = computeAccel(s.tw, s.ow, ls, N, s);
+        for (let i = 0; i < N; i++) {
+            s.k2_t[i] = h * s.ow[i];
+            s.k2_o[i] = h * a2[i];
+        }
+
+        // ── k3 (half-step) ──
+        for (let i = 0; i < N; i++) {
+            s.tw[i] = s.t0[i] + s.k2_t[i] / 2;
+            s.ow[i] = s.o0[i] + s.k2_o[i] / 2;
+        }
+        const a3 = computeAccel(s.tw, s.ow, ls, N, s);
+        for (let i = 0; i < N; i++) {
+            s.k3_t[i] = h * s.ow[i];
+            s.k3_o[i] = h * a3[i];
+        }
+
+        // ── k4 (full step) ──
+        for (let i = 0; i < N; i++) {
+            s.tw[i] = s.t0[i] + s.k3_t[i];
+            s.ow[i] = s.o0[i] + s.k3_o[i];
+        }
+        const a4 = computeAccel(s.tw, s.ow, ls, N, s);
+        for (let i = 0; i < N; i++) {
+            s.k4_t[i] = h * s.ow[i];
+            s.k4_o[i] = h * a4[i];
+        }
+
+        // ── weighted RK4 sum into state ──
+        for (let i = 0; i < N; i++) {
+            th[i] += (s.k1_t[i] + 2 * s.k2_t[i] + 2 * s.k3_t[i] + s.k4_t[i]) / 6;
+            om[i] += (s.k1_o[i] + 2 * s.k2_o[i] + 2 * s.k3_o[i] + s.k4_o[i]) / 6;
         }
     }
 }
@@ -1681,6 +1747,7 @@ function addJoint() {
     p.omegas.push(0);
     p.ls = p.constraints.map(c => c.len);
     p.N = p.ls.length;
+    p.ls_f64.set(p.ls);           // sync Float64Array hot-path copy
     computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();
@@ -1698,6 +1765,7 @@ function removeJoint() {
     p.omegas.pop();
     p.ls = p.constraints.map(c => c.len);
     p.N = p.ls.length;
+    p.ls_f64.set(p.ls);           // sync Float64Array hot-path copy
     computeParticlePositions(p);
     syncBobPositions(p);
     updateControls();

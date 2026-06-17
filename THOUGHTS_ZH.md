@@ -1124,5 +1124,44 @@ dragHudOpacity = Math.max(dragHudOpacity - 0.15, 0);
 | `animate()` | FPS 滚动窗口更新 + 每 30 帧自适应 TRAIL_LENGTH 调整 |
 | `resizeCanvas()` | 设置 `MAX_TRAIL_LENGTH` 而非直接覆写 `TRAIL_LENGTH` |
 
+## 特性 — 物理求解器：Cholesky 分解 + JIT 友好的 Float64Array
+
+### 1. Cholesky 分解（替代高斯消元）
+
+将 `derivativesArray()`（带部分主元的高斯消元）替换为 `computeAccel()` + Cholesky 分解。
+
+**原因**：质量矩阵 M 是对称正定的（拉格朗日量的类 Gram 结构）。Cholesky 利用了这一性质：
+- **~N³/3 浮点运算** vs 高斯消元的 ~2N³/3 — N=8 时性能约提升 2 倍
+- **无需主元**选择与行交换操作
+- **原地计算** — 直接写入预分配的 `scratch.L` 和 `scratch.alpha`
+
+**实现**（`choleskyFactor` + `choleskySolve`）：
+1. 分解 M = L·Lᵀ，其中 L 为下三角矩阵（按行主序的 Float64Array）
+2. 前向代入：L·y = b → 求解 y
+3. 后向代入：Lᵀ·α = y → 求解 α
+
+### 2. JIT 友好的 Float64Array 暂存缓冲区
+
+旧版 `rk4Step()` 每子步骤创建 **16 个临时数组**（`.slice()` + `.map()`），在 8 子步骤 × 4 次导数计算 × 60 fps 下造成灾难性 GC 压力。现在所有工作向量一次性预分配。
+
+**每个摆的暂存区**（`createScratch()`，按 `MAX_LINKS = 8` 大小分配）：
+| 类别 | 缓冲区 | 数量 |
+|---|---|---|
+| 求解器 | M (N×N)、L (N×N)、b、y、alpha | 5 |
+| 初始状态保存 | t0、o0 | 2 |
+| RK4 斜率 | k1_t、k1_o … k4_t、k4_o | 8 |
+| 中间评估 | tw、ow（k2/k3/k4 复用） | 2 |
+| **总计** | **17 个 Float64Array 缓冲区** | **每个摆约 1.3 KB** |
+
+**热路径变更**：
+- `computeAccel(thetas, omegas, ls, N, s)` 从 Float64Array 输入读取，M/b 写入暂存区，调用 Cholesky，返回 `scratch.alpha` — 零分配
+- `rk4Step()` 每子步骤将 `p.thetas` 复制到 `scratch.t0`（N ≤ 8 的平面复制），随后使用原地 Float64Array 运算完成 k1–k4 循环
+- `p.ls_f64`（Float64Array）作为 `p.ls` 的热路径镜像；当 `p.ls` 变更时同步更新
+
+### 边界情况
+- **关节增删**：`p.ls_f64.set(p.ls)` 在 N 变化时同步 Float64Array 副本
+- **窗口缩放**：`rebuildChain()` 通过 `if (p.ls_f64)` 保护，兼容 Float64Array 引入前创建的摆
+- **数值安全**：`choleskyFactor` 在对角元上调用 `Math.sqrt()` — 若极端角度导致 M 失去正定性，sqrt 将返回 NaN，由现有的 `isPendulumInvalid()` / `safeResetPendulum()` 恢复路径捕获
+
 ## 文件变更
-- **script.js**：拖拽 HUD 新增 88 行（状态变量、`drawDragHUD()`、修改 `mousedown`/`touchstart`/`draw()`/`animate()`）。渲染优化新增 29 行：FPS Guardian（`MAX_TRAIL_LENGTH`、`fpsTimestamps[]`、`currentFPS`、`fpsAdaptCounter` + `animate()` 中自适应逻辑）和 Path2D 批量渲染（重写 `drawTrail()` 非速度分支）。修改 `resizeCanvas()` 以追踪 `MAX_TRAIL_LENGTH`。
+- **script.js**：为 Cholesky 求解器 / Float64Array 暂存缓冲区新增约 104 行。新增 `createScratch()`、`choleskyFactor()`、`choleskySolve()`、`computeAccel()`。用零分配 Float64Array 循环重写 `rk4Step()`。向摆状态对象添加 `p.scratch` 和 `p.ls_f64`。在 `addJoint()`、`removeJoint()`、`rebuildChain()` 和 `resizeCanvas()` 中同步 `p.ls_f64`。移除旧的 `derivativesArray()` 函数。

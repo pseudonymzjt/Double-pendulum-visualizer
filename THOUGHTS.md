@@ -1270,5 +1270,44 @@ Replaced the per-segment `beginPath()` + `moveTo()` + `lineTo()` + `stroke()` se
 | `animate()` | FPS rolling-window update + adaptive TRAIL_LENGTH adjustment every 30 frames |
 | `resizeCanvas()` | Sets `MAX_TRAIL_LENGTH` instead of directly overwriting `TRAIL_LENGTH` |
 
+## Feature — Physics Solver: Cholesky Decomposition + JIT-Friendly Float64Array
+
+### 1. Cholesky Decomposition (was Gaussian Elimination)
+
+Replaced `derivativesArray()` (Gaussian elimination with partial pivoting) with `computeAccel()` + Cholesky decomposition.
+
+**Why**: The mass matrix M is symmetric positive-definite (Gram-like structure from the Lagrangian). Cholesky exploits this:
+- **~N³/3 flops** vs ~2N³/3 for Gaussian elimination — nearly 2× faster for N=8
+- **No pivoting** needed for SPD matrices — eliminates pivot-searching and row-swapping overhead
+- **In-place** — writes directly into pre-allocated `scratch.L` and `scratch.alpha`
+
+**Implementation** (`choleskyFactor` + `choleskySolve`):
+1. Factor M = L·Lᵀ where L is lower triangular (flat row-major Float64Array)
+2. Forward substitution: L·y = b → solve for y
+3. Backward substitution: Lᵀ·α = y → solve for α
+
+### 2. JIT-Friendly Float64Array Scratch Buffers
+
+The old `rk4Step()` created **16 temporary arrays per sub-step** via `.slice()` and `.map()` — catastrophic GC pressure at 8 sub-steps × 4 derivative calls × 60 fps. Now every working vector is pre-allocated once.
+
+**Per-pendulum scratch** (`createScratch()`, sized for `MAX_LINKS = 8`):
+| Category | Buffers | Count |
+|---|---|---|
+| Solver | M (N×N), L (N×N), b, y, alpha | 5 |
+| Initial state save | t0, o0 | 2 |
+| RK4 slopes | k1_t, k1_o … k4_t, k4_o | 8 |
+| Intermediate eval | tw, ow (reused for k2/k3/k4) | 2 |
+| **Total** | **17 Float64Array buffers** | **~1.3 KB per pendulum** |
+
+**Hot path changes**:
+- `computeAccel(thetas, omegas, ls, N, s)` reads from Float64Array inputs, writes M/b into scratch, calls Cholesky, returns `scratch.alpha` — zero allocations
+- `rk4Step()` copies `p.thetas` → `scratch.t0` once per sub-step (N ≤ 8 flat copy), then loops through k1–k4 with in-place Float64Array arithmetic
+- `p.ls_f64` (Float64Array) mirrors `p.ls` for the hot path; synced when `p.ls` changes
+
+### Edge Cases
+- **Joint add/remove**: `p.ls_f64.set(p.ls)` syncs the Float64Array copy when N changes
+- **Resize canvas**: `rebuildChain()` guards with `if (p.ls_f64)` for pendulums created before the Float64Array era
+- **Numerical safety**: `choleskyFactor` calls `Math.sqrt()` on the diagonal — if M were to lose positive-definiteness from extreme angles, the sqrt would return NaN, which would be caught by the existing `isPendulumInvalid()` / `safeResetPendulum()` recovery path
+
 ## Files Changed
-- **script.js**: 88 lines added for drag HUD (state variables, `drawDragHUD()`, modifications to `mousedown`/`touchstart`/`draw()`/`animate()`). +29 lines for rendering optimizations: FPS Guardian (`MAX_TRAIL_LENGTH`, `fpsTimestamps[]`, `currentFPS`, `fpsAdaptCounter` + adaptive logic in `animate()`) and Path2D batch rendering (rewrote non-velocity branch in `drawTrail()`). Modified `resizeCanvas()` to track `MAX_TRAIL_LENGTH`.
+- **script.js**: +104 lines for Cholesky solver / Float64Array scratch buffers. Added `createScratch()`, `choleskyFactor()`, `choleskySolve()`, `computeAccel()`. Rewrote `rk4Step()` with zero-allocation Float64Array loops. Added `p.scratch` and `p.ls_f64` to pendulum state. Synced `p.ls_f64` in `addJoint()`, `removeJoint()`, `rebuildChain()`, and `resizeCanvas()`. Removed old `derivativesArray()` function.
