@@ -1,78 +1,76 @@
-# Difficulties Encountered — Chaotic Art: Double Pendulum Visualizer
+# Difficulties I Encountered — Chaotic Art: Double Pendulum Visualizer
 
-> A catalog of significant engineering challenges faced during development, their root causes, and the solutions that were ultimately adopted.
+> Every bug I hit, every dead end I walked into, and how I eventually got out. There are 18 of them here, roughly ordered by how much they hurt.
 
 ---
 
 ## 1. Verlet Numerical Damping (Stage 7 → Stage 8 Rewrite)
 
-**Severity**: Critical — made the pendulum exhibit no chaos.
+**How bad**: Critical. The pendulum wouldn't chaos.
 
-**Symptom**: The double pendulum trajectory looked "too regular and lacked chaotic movement, even at initial high angle." The user specifically asked whether small-angle approximations or excessive damping were present.
+**What happened**: My Stage 7 Verlet + constraint-solver approach made the trajectory look "too regular and lacked chaotic movement, even at initial high angle." The user asked if I had small-angle approximations or excessive damping in the code. I had neither — or so I thought.
 
-**Root cause**: The Stage 7 Verlet + constraint-solver approach had three compounding problems:
+**Why**: Three problems, all compounding:
 
-1. **40 constraint corrections per frame**: 4 sub-steps × 10 constraint iterations = 40 position adjustments per frame, each applying 50/50 correction splits. This acts as implicit damping — the repeated corrections bleed kinetic energy each frame.
+1. **40 constraint corrections per frame**: 4 sub-steps × 10 iterations = 40 position adjustments per frame, each splitting corrections 50/50. This acts as implicit damping — every correction bleeds a tiny bit of kinetic energy.
 
-2. **No non-linear coupling**: Verlet treats each particle independently (gravity + distance constraints). There are no terms encoding the Coriolis-like coupling between arms (`ω₁² sin(θ₁-θ₂)`, etc.). Without these terms, the sensitive dependence on initial conditions that drives chaos is absent.
+2. **No nonlinear coupling**: Verlet treats each particle independently (gravity + distance constraints). There are no terms encoding the Coriolis-like coupling between arms (`ω₁² sin(θ₁-θ₂)`, etc.). Without those terms, there's no sensitive dependence on initial conditions — the engine of chaos.
 
-3. **Uniform 50/50 split**: The constraint solver distributes corrections evenly between both particles of each constraint. For a chain pendulum, this means the inner bob absorbs half the correction from **both** adjacent constraints each iteration — effectively doubling its "friction."
+3. **Uniform 50/50 split**: The constraint solver distributes corrections evenly. For a chain pendulum, the inner bob absorbs half the correction from **both** adjacent constraints — effectively doubling the friction on that joint.
 
-**Solution**: Abandoned Verlet entirely and rewrote the physics engine using exact Lagrangian mechanics with RK4 integration. The new solver computes the full N×N mass matrix with trigonometric coupling and solves it via Cholesky decomposition. The Verlet → Lagrangian transition was the **single largest rewrite** in the project's history.
+**How I fixed it**: I abandoned Verlet entirely and rewrote the physics engine using exact Lagrangian mechanics with RK4 integration. The new solver computes the full N×N mass matrix with trigonometric coupling and solves it via Cholesky decomposition. This was the **single largest rewrite** in the project's history.
 
-**Lesson**: Constraint-based physics (Verlet, PBD) introduces implicit damping that is mathematically opaque — you can't easily quantify how much energy you're losing per frame. Lagrangian mechanics, while mathematically heavier, gives you exact energy conservation properties by design.
+**What I learned**: Constraint-based physics (Verlet, PBD) introduces implicit damping that's mathematically opaque — you can't easily quantify how much energy you're losing per frame. Lagrangian mechanics is heavier mathematically, but it gives you exact energy conservation by design.
 
 ---
 
 ## 2. N-Link Locking — The Rigid-Body Bug
 
-**Severity**: Critical — made N > 2 pendulums physically incorrect.
+**How bad**: Critical. N > 2 pendulums were physically wrong.
 
-**Symptom**: When adding a third joint to create a triple pendulum, the last two bobs were "completely locked together and act like a single rigid body." The 3rd bob shared the same θ₂ with no independent bending at the joint.
+**What happened**: When I added a third joint to make a triple pendulum, the last two bobs were "completely locked together and act like a single rigid body." The 3rd bob shared the same θ₂ — no independent bending at the joint.
 
-**Root cause**: The initial N-link implementation placed intermediate particles **proportionally along rod 2** (collinear with the θ₂ direction), while the physics solver was hardcoded as a 2×2 Lagrangian system. With only 2 degrees of freedom for N > 2 particles, the extra joints had no independent angular freedom — they were geometrically collinear with the last rod.
+**Why**: My initial N-link approach placed intermediate particles **proportionally along rod 2** (collinear with the θ₂ direction), while the physics solver was hardcoded as a 2×2 Lagrangian system. With only 2 degrees of freedom for N > 2 particles, the extra joints had no angular freedom — they were geometrically collinear with the last rod.
 
-**Fix**: Replaced the hardcoded 2×2 solver with a **general N-pendulum Lagrangian solver**:
+**How I fixed it**: I replaced the hardcoded 2×2 solver with a **general N-pendulum Lagrangian solver**:
 
 ```
 Mᵢⱼ = lᵢ lⱼ (N−max(i,j)) cos(θᵢ−θⱼ)
 bᵢ  = −Σⱼ≠ᵢ Aᵢⱼ sin(θᵢ−θⱼ) ωⱼ² − g lᵢ (N−i) sin(θᵢ)
 ```
 
-The state now stores arrays `thetas[]`, `omegas[]`, `ls[]` — each link has its own independent angle. `computeParticlePositions` uses a simple forward loop: start at pivot, place each bob at its own θᵢ from the previous bob's position.
+Each link now has its own independent angle in `thetas[]`, and `computeParticlePositions` just walks from the pivot placing each bob at its own θᵢ.
 
-**Lesson**: When generalizing from N=2 to N>2, the architecture must be **N-parameter from the start**. Adding degrees of freedom as an afterthought (e.g., "just interpolate along rod 2") creates coupling artifacts that are nearly impossible to diagnose from visual observation alone.
+**What I learned**: When you generalize from N=2 to N>2, the architecture must be **N-parameter from the start**. Adding degrees of freedom as an afterthought ("just interpolate along rod 2") creates coupling artifacts that are nearly impossible to diagnose visually.
 
 ---
 
 ## 3. Energy Conservation — Wrong Sign in PE Formula
 
-**Severity**: High — 341% energy drift rendered the energy plot meaningless.
+**How bad**: High. 341% energy drift made the energy plot useless.
 
-**Symptom**: The total energy oscillated between -29 and +113 joules instead of staying constant.
+**What happened**: Total energy oscillated between -29 and +113 joules instead of staying constant.
 
-**Root cause**: The potential energy formula used the y-down canvas convention (`PE = g Σ (N−i) lᵢ cos(θᵢ)`) but the physics engine's Lagrangian uses the y-up convention. In the equations of motion, the gravity term is `−g (N−i) lᵢ sin(θᵢ)`, which matches Euler-Lagrange only when `V = −g Σ (N−i) lᵢ cos(θᵢ)` — note the **negation**.
+**Why**: I used the canvas y-down convention (`PE = g Σ (N−i) lᵢ cos(θᵢ)`) but the Lagrangian equations use y-up. In the equations of motion, the gravity term is `−g (N−i) lᵢ sin(θᵢ)`, which matches Euler-Lagrange only when `V = −g Σ (N−i) lᵢ cos(θᵢ)` — note the **negation**.
 
 Before: `PE =  g Σ (N−i) lᵢ cos(θᵢ)` → totalE drifts 341%
 After:  `PE = −g Σ (N−i) lᵢ cos(θᵢ)` → totalE constant to 0.0000%
 
-**Fix**: A one-character change (`g` → `-g`) that took seconds to type but days of debugging to discover.
+**How I fixed it**: One character. `g` → `-g`. Took seconds to type, days to discover.
 
-**Lesson**: Coordinate system conventions matter profoundly in physics simulation. The canvas y-axis (down = positive) is opposite to the conventional physics y-axis (up = positive). Every formula that references vertical direction must be audited for sign consistency.
+**What I learned**: Coordinate system conventions matter profoundly in physics simulation. The canvas y-axis (down = positive) is opposite to physics (up = positive). Every formula that references vertical direction needs sign auditing.
 
 ---
 
 ## 4. CSS Specificity War — Code Block Rendering
 
-**Severity**: Medium — documentation display broken.
+**How bad**: Medium. Documentation display was broken.
 
-**Symptom**: Fenced code blocks in the Guide modal rendered as a single line, with all line breaks stripped from the ASCII directory tree.
+**What happened**: Fenced code blocks in the Guide modal rendered as a single line. The ASCII directory tree was flat.
 
-**Root cause**: `#help-modal-content code { white-space: nowrap }` (specificity 1,0,0,1) applied to ALL `<code>` elements in the modal, including those inside `<pre>` blocks. The class-based `.help-readme-body pre code { white-space: pre }` rule (specificity 0,2,0,2) was overridden because **ID selectors beat class selectors in CSS specificity**, regardless of source order.
+**Why**: `#help-modal-content code { white-space: nowrap }` (specificity 1,0,0,1) applied to ALL `<code>` elements, even those inside `<pre>` blocks. My class-based `.help-readme-body pre code { white-space: pre }` (specificity 0,2,0,2) was overridden because **ID selectors beat class selectors**, regardless of source order. I tried moving rules around in the stylesheet — **zero effect**.
 
-Moving rules around in the stylesheet had **zero effect** — this is a common CSS misconception.
-
-**Fix**: Added the parent ID to the `pre code` selector:
+**How I fixed it**: I added the parent ID to the `pre code` selector:
 ```css
 #help-modal-content .help-readme-body pre code {
     white-space: pre;
@@ -80,78 +78,78 @@ Moving rules around in the stylesheet had **zero effect** — this is a common C
 ```
 `#help-modal-content .help-readme-body pre code` (specificity 1,1,2,1) beats `#help-modal-content code` (1,0,0,1).
 
-**Lesson**: CSS specificity is a **weight system**, not a proximity system. `#id` always beats `.class`. When overriding ID-based rules, the fix is either (a) increase your selector's specificity by including the parent ID, or (b) use `!important` (fragile). Reordering CSS rules alone will not help.
+**What I learned**: CSS specificity is a **weight system**, not a proximity system. `#id` always beats `.class`. To override an ID-based rule, you either include the parent ID in your selector or use `!important` (but don't). Reordering CSS alone is a waste of time.
 
 ---
 
 ## 5. GitHub Pages Deployment Crash
 
-**Severity**: Critical — app completely broken in production.
+**How bad**: Critical. The app was completely broken in production.
 
-**Symptom**: A blank dark page on GitHub Pages with `TypeError: Cannot read properties of null (reading 'addEventListener')` in console. The animation loop never started.
+**What happened**: A blank dark page on GitHub Pages. Console: `TypeError: Cannot read properties of null (reading 'addEventListener')`. The animation loop never started.
 
-**Root cause**: Two compounding issues:
+**Why**: Two issues together:
 
-1. **Missing `defer`**: The `<script>` tag had no `defer` attribute, so the browser executed it synchronously during HTML parsing. On localhost (file:// or live server), the full HTML arrived instantly, masking the issue. On GitHub Pages (CDN-served, chunked transfer), the script executed **before** some DOM nodes existed.
+1. **No `defer`**: The `<script>` tag had no `defer`, so the browser executed it synchronously during HTML parsing. On localhost the full HTML arrived instantly — never a problem. On GitHub Pages (CDN-served, chunked), the script ran **before** some DOM nodes existed.
 
-2. **ID mismatch**: A `document.getElementById()` call returned `null` because the element ID was renamed in HTML but not in JS (or vice versa). Calling `.addEventListener()` on `null` threw a TypeError that propagated out of the top-level script, halting **all** subsequent code — including the entire animation loop.
+2. **ID mismatch**: A `document.getElementById()` returned `null`. Calling `.addEventListener()` on `null` threw a TypeError that killed the **entire** top-level script — animation loop, controls, everything.
 
-**Fix**:
+**How I fixed it**:
 - Added `defer` to the `<script>` tag
-- Created `$(id)` helper (`document.getElementById` alias) and `on(id, event, handler)` dual-purpose function that silently skips binding if the element doesn't exist
-- Converted all 18 `document.getElementById(id).addEventListener(event, handler)` calls to `on(id, event, handler)`
+- Created `$(id)` helper and `on(id, event, handler)` — silently skips binding if the element doesn't exist
+- Converted all 18 raw `document.getElementById(id).addEventListener(...)` calls to `on(id, event, handler)`
 
-**Lesson**: Local development can hide timing-dependent bugs. Always test `file://` vs HTTP vs CDN serving. The `defer` attribute should be the **default** for any `<script>` that references DOM elements.
+**What I learned**: Local development hides timing bugs. Always test `file://` vs HTTP vs CDN. And `defer` should be the **default** for any `<script>` that touches the DOM.
 
 ---
 
 ## 6. Mobile Touch Bounce (iOS Safari)
 
-**Severity**: High — made dragging impossible on iOS.
+**How bad**: High. Dragging was impossible on iOS.
 
-**Symptom**: When dragging a pendulum bob on an iPhone, the page would rubber-band/scroll instead of moving the bob.
+**What happened**: On iPhone, trying to drag a pendulum bob would scroll the page instead.
 
-**Root cause**: iOS Safari's elastic overscroll and touch gesture handling. Even with `overflow: hidden`, Safari still intercepts touch events for page scrolling. The original `{ passive: true }` touch event listeners meant `preventDefault()` was **silently ignored** by the browser.
+**Why**: iOS Safari's elastic overscroll hijacks touch events. Even with `overflow: hidden`, Safari intercepts them for scrolling. My original `{ passive: true }` listeners meant `preventDefault()` was **silently ignored**.
 
-**Fix** (three layers of defense):
+**How I fixed it** (three layers):
 
-1. CSS: `touch-action: none` on both canvases — tells the compositor at the GPU level to never interpret touch on these elements as scroll/zoom gestures
-2. CSS: `overscroll-behavior: none` on `html, body` — prevents elastic bounce at the document level
-3. JS: Changed touch listeners to `{ passive: false }` and called `e.preventDefault()` conditionally when `dragActive === true`
+1. CSS: `touch-action: none` on both canvases — tells the compositor at the GPU level to never interpret touches as scroll/zoom
+2. CSS: `overscroll-behavior: none` on `html, body` — document-level bounce prevention
+3. JS: Changed to `{ passive: false }`, called `e.preventDefault()` conditionally when actually dragging
 
-**Lesson**: Mobile browser touch handling requires defense-in-depth. CSS-level `touch-action: none` is the most reliable (operates at the compositor thread), but you still need JS-level `passive: false` + `preventDefault()` for full control. These are complementary, not redundant.
+**What I learned**: Mobile touch handling needs defense-in-depth. CSS-level `touch-action: none` is the most reliable, but you still need `preventDefault()` with `passive: false` for full control. They're complementary, not redundant.
 
 ---
 
 ## 7. Blank Canvas at Startup
 
-**Severity**: High — invisible pendulum on initial page load.
+**How bad**: High. The pendulum was invisible on initial load.
 
-**Symptom**: After removing slowMo mode code, the pendulum was invisible at startup — only a dark background showed.
+**What happened**: After I removed some slowMo-related code, the pendulum stopped appearing at startup. Just a dark background.
 
-**Root cause**: Two independent issues:
+**Why**: Two independent problems:
 
-1. **No synchronous initial paint**: The bootstrap sequence was `animate()` via `requestAnimationFrame`, which fires ~16ms later at the next VSync. During that gap, the canvases were transparent (unpainted).
+1. **No synchronous initial paint**: My bootstrap called `animate()` via `requestAnimationFrame`, which fires ~16ms later at the next VSync. During that gap, the canvases were transparent.
 
-2. **Unsafe `matchMedia` usage**: `window.matchMedia("...")` could throw in some environments, halting the entire top-level script at that line.
+2. **Unsafe `matchMedia`**: `window.matchMedia("...")` could throw in some environments, killing the script at that line.
 
-**Fix**:
+**How I fixed it**:
 - Added `window.matchMedia ? ... : false` null guard
-- Added **synchronous** `draw()` and `updateAngleDisplay()` calls in the bootstrap, before `animate()` — the pendulum renders on the very first layout frame
+- Added **synchronous** `draw()` and `updateAngleDisplay()` calls before `animate()` — the pendulum renders on the very first layout frame
 
-**Lesson**: `requestAnimationFrame` callbacks are not instant. If your app depends on a visual appearing immediately (e.g., before a metrics-observation tool captures the page), you need a synchronous paint path. Also: always guard `matchMedia` — it's not available in all JS environments.
+**What I learned**: `requestAnimationFrame` is not instant. If you need an immediate visual, you need a synchronous paint path. And always guard `matchMedia`.
 
 ---
 
 ## 8. Multiple Pendulum Metrics — Global Array Bug
 
-**Severity**: High — phase portrait and energy plots showed wrong data when switching pendulums.
+**How bad**: High. The phase portrait and energy plots showed wrong data when I switched pendulums.
 
-**Symptom**: With multiple pendulums, switching selection or spawning a new pendulum caused stale/wrong data to appear in the plots.
+**What happened**: With multiple pendulums on screen, selecting a different one or spawning a new one caused stale or wrong data to appear in the plots.
 
-**Root cause**: The metrics system used a single global `metricsData` array that belonged to whichever pendulum happened to be `selectedPendulum` at collection time. When selection switched, the plot renderers read data from the **previous** pendulum's collection.
+**Why**: I had a single global `metricsData` array that belonged to whichever pendulum happened to be selected at collection time. When selection switched, the plot renderers read data from the **previous** pendulum's collection.
 
-**Fix**: Each pendulum owns its own `metrics[]` array, initialized in `createPendulum()`. `collectMetrics()` iterates all visible pendulums:
+**How I fixed it**: Each pendulum now owns its own `metrics[]` array, initialized in `createPendulum()`. `collectMetrics()` iterates all visible pendulums independently.
 
 ```js
 function collectMetrics() {
@@ -163,49 +161,50 @@ function collectMetrics() {
 }
 ```
 
-**Lesson**: When data is per-entity, the storage should be per-entity too. Global buffers create hidden coupling between collection and rendering that only manifests under specific interaction sequences.
+**What I learned**: When data is per-entity, storage should be per-entity too. Global buffers create hidden coupling that only manifests under specific interaction sequences.
 
 ---
 
 ## 9. Right-Click Killing the Context Menu
 
-**Severity**: Medium — confusing UI behavior.
+**How bad**: Medium. Confusing UI behavior.
 
-**Symptom**: Right-clicking anywhere on the canvas made the contextual menu disappear.
+**What happened**: Right-clicking anywhere on the canvas made the contextual menu disappear.
 
-**Root cause**: `canvasB`'s `mousedown` handler had no `e.button` check. A right-click (button 2) on empty space triggered `selectPendulum(null)`, which hid the contextual menu.
+**Why**: My `canvasB` mousedown handler had no `e.button` check. A right-click (button 2) on empty space triggered `selectPendulum(null)`, which hid the menu.
 
-**Fix**: Added `if (e.button !== 0) return;` at the top of the handler — only left-click triggers selection/deselection. Also added `contextmenu` event prevention to suppress the browser's native right-click menu.
+**How I fixed it**: Added `if (e.button !== 0) return;` at the top of the handler — only left-click triggers selection. Also suppressed the browser's native right-click menu.
 
-**Lesson**: Mouse events fire for all buttons unless explicitly filtered. The `event.button` property is 0 for primary, 1 for middle, 2 for secondary (right) button. Always check it when clicks have side effects.
+**What I learned**: Mouse events fire for all buttons unless you filter them. `event.button` is 0 for left, 1 for middle, 2 for right. Always check it when clicks have side effects.
 
 ---
 
 ## 10. Phase Portrait Wrap-Around Line Artifact
 
-**Severity**: Medium — misleading visual artifact on phase plots.
+**How bad**: Medium. Misleading visual artifact.
 
-**Symptom**: When θ₁ wrapped from ~359° back to ~1° (crossing the 0°/360° boundary), a straight horizontal line appeared across the entire phase portrait graph.
+**What happened**: When θ₁ wrapped from ~359° back to ~1° (crossing the 0°/360° boundary), a straight line appeared across the entire phase portrait.
 
-**Root cause**: After normalising all θ₁ values to [0, 2π), consecutive data points at opposite ends of the range (359° and 1°) were connected by a direct line, since the path-drawing code knew nothing about angular wrapping.
+**Why**: I normalized all θ₁ values to [0, 2π), but consecutive data points at opposite ends of the range were connected by a direct line — the path drawer didn't know about angular wrapping.
 
-**Fix**: `drawFadingLine` now detects consecutive X values that jump by more than half the data range (`wrapThreshold = range × 0.5`). When such a jump is detected, the current path is stroked and a **new** path begins at the current point — preventing the cross-graph line.
+**How I fixed it**: `drawFadingLine` now detects consecutive X values that jump by more than half the range (`wrapThreshold = range × 0.5`). When detected, it strokes the current path and starts a **new** one at the current point.
 
-**Lesson**: Angular data has topological quirks (modular arithmetic) that don't exist in linear data. Any visualization that plots angular quantities must handle the periodic boundary condition.
+**What I learned**: Angular data has topological quirks that linear data doesn't. Any plot of angular quantities has to handle the periodic boundary condition.
 
 ---
 
 ## 11. Angle Display Click Interception
 
-**Severity**: Medium — clickable pendulum selector stopped working when plots were open.
+**How bad**: Medium. The clickable pendulum selector stopped working when plots were open.
 
-**Symptom**: Clicking a pendulum entry in the angle display did nothing when the metrics panel was open or a plot was zoomed.
+**What happened**: Clicking a pendulum entry in the angle display did nothing when the metrics panel was open or a plot was zoomed.
 
-**Root cause**: Two compounding issues:
-1. Plot canvas `click` handlers called `e.stopPropagation()`, blocking the `click` event from reaching the angle display's `click` listener
-2. Zoomed plot boxes sit at `z-index: 10`, intercepting pointer events physically covering the angle display area
+**Why**: Two problems:
+1. Plot canvas `click` handlers called `e.stopPropagation()`, blocking `click` from reaching my listener
+2. Zoomed plot boxes at `z-index: 10` physically covered the angle display area
 
-**Fix**: Changed from `click` event delegation to `pointerdown` — a different event type not affected by `click` handlers' `stopPropagation()`:
+**How I fixed it**: Switched from `click` event delegation to `pointerdown` — a different event type not affected by `click` handlers' `stopPropagation()`.
+
 ```js
 document.addEventListener('pointerdown', (e) => {
     const entry = e.target.closest('.pend-entry');
@@ -214,140 +213,140 @@ document.addEventListener('pointerdown', (e) => {
 });
 ```
 
-**Lesson**: `click` is a composed event (mousedown + mouseup on the same element) and can be blocked by `stopPropagation()` on either of its component events. `pointerdown` fires immediately on press and is not blocked by downstream `click` handlers. For UI that needs to work under overlay-like elements, `pointerdown` is more reliable.
+**What I learned**: `click` is a composed event (mousedown + mouseup) and can be blocked by `stopPropagation()` on either component. `pointerdown` fires immediately and can't be blocked by downstream `click` handlers. For overlay-resistant UI, `pointerdown` is more reliable.
 
 ---
 
 ## 12. Energy Plot X-Axis Stagnation
 
-**Severity**: Medium — misleading plot appearance.
+**How bad**: Medium. The plot looked frozen.
 
-**Symptom**: Once the metrics ring buffer filled (300 points), the X-axis labels never changed — stuck at 0, 60, 120, 180, 240, 299 — giving the false impression that time had stopped.
+**What happened**: Once the metrics ring buffer filled (300 points), the X-axis labels never changed — stuck at 0, 60, 120, 180, 240, 299. It looked like time had stopped.
 
-**Root cause**: The original code used array index as X value (`(_, i) => i`) with `xRange.max = data.length - 1`. With a ring buffer, `data.length` stays constant once full, so the X range never advances.
+**Why**: I used array index as X value (`(_, i) => i`) with `xRange.max = data.length - 1`. With a ring buffer, `data.length` stays constant once full, so the X range never advances.
 
-**Fix**: Added a global `globalMetricsStep` counter that increments each physics frame. Each metrics entry stores its step number. The energy plot's X range derives from the first and last entries' step numbers: `{ min: first.step, max: last.step }`.
+**How I fixed it**: Added a global `globalMetricsStep` counter that increments each physics frame. Each entry stores its step number. The energy plot's X range comes from the first and last entries' step numbers.
 
-**Lesson**: Ring buffers decouple data count from time progression. When plotting rolling window data, use monotonic sequence numbers (not array indices) for the X axis.
+**What I learned**: Ring buffers decouple data count from time progression. For rolling window plots, use monotonic sequence numbers, not array indices.
 
 ---
 
 ## 13. Blank Plot Canvas — Index Pass-Through Bug
 
-**Severity**: Medium — plots rendered nothing.
+**How bad**: Medium. Both plots rendered nothing.
 
-**Symptom**: Both phase portrait and energy plot canvases were completely blank, with no error messages in console.
+**What happened**: Phase portrait and energy plot canvases were completely blank. No console errors.
 
-**Root cause**: `drawSolidLine` called `getX(data[i])` with a single argument, but the X getter was `(_, i) => i` — expecting a **second** argument for the index. Without it, `i` was `undefined`, and the coordinate mapping produced `NaN` for every X coordinate. The path drew nothing.
+**Why**: `drawSolidLine` called `getX(data[i])` with a single argument, but the X getter was `(_, i) => i` — expecting a **second** argument for the index. Without it, `i` was `undefined`, and every X coordinate became `NaN`.
 
 ```js
 // Bug:
 const px = mapX(getX(data[i]), xMin, xMax, PLOT_W);
-// getX = (_, i) => i  →  called as getX(data[i], undefined)  →  returns undefined
+// getX = (_, i) => i  →  called as getX(data[i], undefined)  →  undefined
 
 // Fix:
 const px = mapX(getX(data[i], i), xMin, xMax, PLOT_W);
 ```
 
-**Lesson**: JavaScript functions silently accept any number of arguments and will happily pass `undefined` for missing ones. When using factory-style getter functions that accept `(value, index)`, always pass both arguments explicitly — don't assume the index is implicit.
+**What I learned**: JavaScript functions accept any number of arguments and happily pass `undefined` for missing ones. When using factory-style getters that accept `(value, index)`, always pass both explicitly.
 
 ---
 
 ## 14. Cholesky Positive-Definiteness at Extreme Angles
 
-**Severity**: Low (handled by safety net) — but could cause silent data corruption.
+**How bad**: Low (caught by the safety net). Could have caused silent corruption.
 
-**Symptom**: At extreme angles and high N (7-8 links), the mass matrix could theoretically lose symmetric positive-definiteness, causing `Math.sqrt()` on the diagonal to return NaN.
+**What happened**: At extreme angles and high N (7-8 links), the mass matrix could theoretically lose symmetric positive-definiteness, causing `Math.sqrt()` on the diagonal to return NaN.
 
-**Root cause**: Numerical precision loss at the limits of the floating-point range. While the mathematical mass matrix is always SPD (Gram-like structure), floating-point rounding can produce a tiny negative diagonal element.
+**Why**: Floating-point rounding at the edge of the representable range. The mathematical matrix is always SPD, but a tiny negative diagonal element can appear due to precision loss.
 
-**Solution**: Intentionally **not** handled at the solver level. The NaN propagates through the physics state and is caught one frame later by `isPendulumInvalid()` / `safeResetPendulum()` — the same safety net that catches all other numerical errors. The pendulum does a "hard reset" (reappears at 135°), which is visually indistinguishable from the existing auto-recovery behavior.
+**How I handled it**: I intentionally **didn't** fix this at the solver level. The NaN propagates into the physics state and gets caught one frame later by `isPendulumInvalid()` / `safeResetPendulum()` — the same safety net that catches everything else. The pendulum reappears at 135° on the next frame.
 
-**Lesson**: Not every numerical edge case needs a mathematical fix. Sometimes the system-level safety net is the cheaper, more robust solution — especially when the triggering conditions are rare, transient, and self-correcting.
+**What I learned**: Not every numerical edge case needs a mathematical fix. Sometimes the system-level safety net is cheaper and more robust — especially when the triggering conditions are rare, transient, and self-correcting.
 
 ---
 
 ## 15. Float64Array Sync Across Mutation Points
 
-**Severity**: Low — bug would only manifest under specific timing.
+**How bad**: Low. Would only manifest under specific timing.
 
-**Symptom**: After adding or removing a joint, the physics solver might read stale `ls[]` values.
+**What happened**: After adding or removing a joint, the physics solver could read stale `ls[]` values.
 
-**Root cause**: The `p.ls_f64` Float64Array mirror of `p.ls` needs to be synchronized every time `p.ls` changes. Missing a single sync point would cause the hot-path solver to read the wrong link lengths — a silent correctness bug.
+**Why**: My `p.ls_f64` Float64Array mirror of `p.ls` needed updating every time `p.ls` changed. Miss a sync point, and the hot-path solver silently reads wrong link lengths.
 
-**Fix**: Added `p.ls_f64.set(p.ls)` at all 4 mutation points:
+**How I fixed it**: Added `p.ls_f64.set(p.ls)` at all 4 mutation points:
 - `addJoint()`
 - `removeJoint()`
-- `rebuildChain()` (with `if (p.ls_f64)` guard for backward compatibility)
+- `rebuildChain()` (with `if (p.ls_f64)` guard for backward compat)
 - `resizeCanvas()`
 
-**Lesson**: Mirroring mutable state into a typed array creates a synchronization surface that must be meticulously maintained. Every code path that modifies the source array must also update the mirror. A helper function (`syncLsF64(p)`) would have been cleaner in retrospect.
+**What I learned**: Mirroring mutable state into a typed array creates a synchronization surface you have to maintain meticulously. Every path that modifies the source must also update the mirror. In hindsight, a helper function like `syncLsF64(p)` would have been cleaner.
 
 ---
 
 ## 16. Verlet Gravity Too Weak
 
-**Severity**: Medium — pendulum appeared frozen.
+**How bad**: Medium. The pendulum appeared frozen.
 
-**Symptom**: In the Stage 7 Verlet implementation, the pendulum barely moved — "frozen" was the exact user report.
+**What happened**: In the Stage 7 Verlet implementation, the pendulum barely moved. "Frozen" was the exact word.
 
-**Root cause**: Verlet gravity `G × pxPerUnit` gave only ~0.022 pixels of displacement per sub-step. With 4 sub-steps, that's ~0.09 px/frame — visually imperceptible.
+**Why**: Verlet gravity `G × pxPerUnit` gave ~0.022 pixels of displacement per sub-step. With 4 sub-steps, that's ~0.09 px/frame — visually imperceptible.
 
-**Fix**: Added `VERLET_G_SCALE = 8` multiplier to amplify gravity. This was a band-aid — the correct fix was to rewrite the physics engine with Lagrangian mechanics (Stage 8).
+**How I fixed it**: Added `VERLET_G_SCALE = 8` as a multiplier. It was a band-aid — the real fix was rewriting with Lagrangian mechanics (Stage 8).
 
-**Lesson**: Verlet integration works well for particle simulations where forces are comparable to constraint forces, but for pendulum systems where gravity is the driving force, the scale mismatch between pixel-space and physics-space requires careful tuning. The Lagrangian approach avoids this entirely by working in consistent physical units.
+**What I learned**: Verlet works well when forces and constraints are comparable, but for pendulums where gravity is the driver, the pixel-space/physics-space scale mismatch requires careful tuning. Lagrangian mechanics avoids this by working in consistent physical units.
 
 ---
 
 ## 17. Stale Trails on Joint Modification
 
-**Severity**: Low — visual glitch.
+**How bad**: Low. Visual glitch.
 
-**Symptom**: After adding or removing a joint, the trail rendering system threw errors because trail array count didn't match particle count.
+**What happened**: After adding or removing a joint, trail rendering threw errors because the trail array count didn't match the particle count.
 
-**Root cause**: The original `addJoint` / `removeJoint` functions modified `particles[]` and `constraints[]` but didn't touch the `trails[]` array. After resizing, the renderer expected `N` trail arrays but found `N-1` (or `N+1`).
+**Why**: `addJoint` / `removeJoint` modified `particles[]` and `constraints[]` but not `trails[]`. After resizing, the renderer expected N trail arrays but found N-1 (or N+1).
 
-**Fix**: `addJoint` pushes an empty trail array for the new particle; `removeJoint` pops the last trail array. Trails are also cleared on window resize.
+**How I fixed it**: `addJoint` pushes an empty trail array; `removeJoint` pops the last one. Trails also get cleared on window resize.
 
-**Lesson**: Anytime the data model has parallel arrays (particles, constraints, trails), any resize operation must update **all** arrays atomically — or better, encapsulate them into a single object. Parallel arrays are an anti-pattern that this project has paid for multiple times.
+**What I learned**: Parallel arrays (particles, constraints, trails) are an anti-pattern. Any resize operation has to update **all** of them atomically — or better, encapsulate them into a single object. This project has paid for this design choice multiple times.
 
 ---
 
 ## 18. Energy Plot Title Not Updating on Selection Switch
 
-**Severity**: Low — cosmetic but confusing.
+**How bad**: Low. Cosmetic, but confusing.
 
-**Symptom**: When switching which pendulum the metrics panel tracked, the phase portrait title still showed the previous pendulum's index until data collection produced new entries.
+**What happened**: When switching which pendulum the metrics panel tracked, the phase portrait title still showed the previous pendulum's index until new data came in.
 
-**Root cause**: The title was updated **after** the `if (p.metrics.length < 2) return;` data guard. If the newly selected pendulum had no metrics data yet, the title never updated.
+**Why**: I updated the title **after** the `if (p.metrics.length < 2) return;` guard. If the new pendulum had no data yet, the title never updated.
 
-**Fix**: Moved title update to the top of `renderPhasePortrait()`, before the data availability check.
+**How I fixed it**: Moved the title update to the top of `renderPhasePortrait()`, before any data availability check.
 
-**Lesson**: Guards that early-return from a function shouldn't prevent state-revealing updates (like titles) from being shown. Order operations so that metadata updates happen before data-dependent operations.
+**What I learned**: Guards that early-return shouldn't prevent metadata (like titles) from updating. Order operations so that state-revealing updates happen before data-dependent ones.
 
 ---
 
 ## Summary
 
-| # | Difficulty | Domain | Root Cause Type |
-|---|-----------|--------|-----------------|
-| 1 | Critical | Physics | Algorithm choice (Verlet damping) |
-| 2 | Critical | Physics | Premature generalization (N=2 → N>2) |
-| 3 | High | Physics | Coordinate system sign error |
-| 4 | Medium | CSS | Specificity misunderstanding |
-| 5 | Critical | Deployment | Timing + null safety |
-| 6 | High | Mobile | Touch event model |
-| 7 | High | Rendering | Async initialization |
-| 8 | High | Data | Global state coupling |
-| 9 | Medium | Events | Unfiltered button checks |
-| 10 | Medium | Visualization | Angular boundary condition |
-| 11 | Medium | Events | Event type incompatibility |
-| 12 | Medium | Visualization | Ring buffer vs time |
-| 13 | Medium | Programming | Argument pass-through |
-| 14 | Low | Numerical | Floating-point precision |
-| 15 | Low | Architecture | Mirror state sync |
-| 16 | Medium | Physics | Unit scale mismatch |
-| 17 | Low | Data | Parallel array mismatch |
-| 18 | Low | Programming | Guard ordering |
+| # | How bad | What went wrong | Root cause type |
+|---|---------|----------------|-----------------|
+| 1 | Critical | Verlet damping killed chaos | Algorithm choice |
+| 2 | Critical | N>2 pendulums locked into a rigid body | Premature generalization |
+| 3 | High | 341% energy drift from a sign error | Coordinate system mistake |
+| 4 | Medium | CSS specificity wouldn't let me override `nowrap` | Selector weight misunderstanding |
+| 5 | Critical | App crashed on GitHub Pages, blank dark page | Timing + null safety |
+| 6 | High | iOS wouldn't let me drag — page scrolled instead | Touch event model |
+| 7 | High | Pendulum invisible at startup | Async initialization |
+| 8 | High | Wrong data in plots when switching pendulums | Global state coupling |
+| 9 | Medium | Right-click killed the context menu | Unfiltered button events |
+| 10 | Medium | Phase portrait had a phantom line across it | Angular boundary condition |
+| 11 | Medium | Clickable UI stopped responding under overlays | Event type incompatibility |
+| 12 | Medium | Energy plot X-axis froze at 299 | Ring buffer vs time |
+| 13 | Medium | Plots were blank, no error message | Missing argument pass-through |
+| 14 | Low | Math.sqrt could return NaN at extreme angles | Floating-point precision |
+| 15 | Low | Physics solver could read stale link lengths | Missed state sync point |
+| 16 | Medium | Verlet pendulum looked frozen | Unit scale mismatch |
+| 17 | Low | Trail arrays out of sync with particles | Parallel array drift |
+| 18 | Low | Phase portrait title showed wrong pendulum | Guard ordering |
 
-The project's difficulties span physics theory, browser API quirks, CSS internals, mobile platform idiosyncrasies, and fundamental software engineering patterns — a reminder that **real engineering challenges are multidisciplinary**.
+These problems span physics theory, browser quirks, CSS internals, mobile platform behavior, and basic software engineering patterns. It's a good reminder that **real engineering challenges are multidisciplinary**.
