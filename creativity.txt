@@ -1,40 +1,40 @@
-# Creativity Analysis — Chaotic Art: Double Pendulum Visualizer
+# Creativity Notes — Double Pendulum Visualizer
 
-> What I think is creative about this project — both the ideas behind it and how they were built.
+> An analysis of the conceptual and technical innovations underlying this project.
 
 ## 1. Conceptual Innovations
 
-### 1.1 Physics Fidelity Without Compromise
+### 1.1 Uncompromising Physical Fidelity
 
-Most pendulum visualizers I've seen online fall into two camps:
-- **Euler integration** with small-angle approximations — fast, but too inaccurate to produce real chaos
-- **Verlet constraint solving** — stable, but the solver acts like a subtle energy sink, damping everything toward boring periodic motion
+Existing pendulum visualizers generally fall into two categories:
+- **Euler integration** with small-angle approximations, which sacrifices accuracy and fails to exhibit genuine chaotic behavior.
+- **Verlet constraint solving**, which achieves stability at the cost of implicit damping that progressively dissipates energy, driving the system toward periodic motion.
 
-I went a different route: I implemented **exact Lagrangian mechanics** with a full N×N mass matrix that keeps every trigonometric coupling term. No `sin θ ≈ θ` shortcuts. The RK4 integrator runs 8 sub-steps per frame (`h = 1/480 s`), and the result is energy stable to **0.0000% drift** — verified over hundreds of steps.
+This project adopts a fundamentally different approach: **exact Lagrangian mechanics** with a full N×N mass matrix retaining all trigonometric coupling terms. No approximations such as `sin θ ≈ θ` are employed. The RK4 integrator executes eight sub-steps per frame (`h = 1/480 s`), yielding an energy drift of **0.0000%** over hundreds of integration steps.
 
-The key thing I realized: chaos in double pendulums comes from the `sin(θ₁−θ₂)` coupling terms and the Coriolis-like `ω₁²·sin(Δ)` / `ω₂²·sin(Δ)` terms. Most simplified solvers just drop these. I kept them, and the result is that the **butterfly effect actually plays out on screen** — you can see it happen.
+The chaotic dynamics of the double pendulum originate from the `sin(θ₁−θ₂)` coupling terms and the Coriolis-like `ω₁²·sin(Δ)` and `ω₂²·sin(Δ)` terms. Most simplified solvers discard these terms; this implementation preserves them in their entirety, allowing the butterfly effect to manifest visibly on screen.
 
-### 1.2 Chaos Mode as a Demo Tool
+### 1.2 Chaos Mode as an Observational Instrument
 
-The usual way to demonstrate chaos is running two simulations side-by-side. I wanted something more visceral: let the user **flip chaos on at any moment** and *watch the split happen*.
+The conventional approach to demonstrating chaos involves running two simulations in parallel. This implementation enables the user to **activate chaos mode at any instant** and observe the divergence in real time.
 
-- Pendulum B spawns at Pendulum A's **current** angles + 0.01° (not at some initial condition the user stopped caring about 5 minutes ago)
-- Pendulum B **inherits Pendulum A's full trail history** — so both trajectories literally share the same origin
-- The divergence point is visually unambiguous: cyan and magenta lines peel apart from the exact moment you pressed `C`
+- Pendulum B is instantiated at Pendulum A's **current** angular configuration plus 0.01° (rather than at some prior initial condition).
+- Pendulum B **inherits Pendulum A's complete trail history**, ensuring both trajectories share a common origin.
+- The divergence point is visually unambiguous: cyan and magenta trajectories peel apart from the precise moment the user presses `C`.
 
-This makes chaos *observable* rather than just *simulatable*. You can let the pendulum run, press `C` at any interesting moment, and watch the butterfly effect unfold from that exact instant.
+This design transforms chaos from a purely simulatable phenomenon into an **observable experience**. The user may allow the system to evolve, activate chaos at any moment of interest, and watch the butterfly effect unfold from that exact instant.
 
 ### 1.3 Artistic Rendering Philosophy
 
-I didn't want this to look like a sterile physics demo. I wanted it to look *good* — like something you'd export and put on a wall.
+The visual design prioritizes aesthetic quality sufficient for high-resolution PNG export, rather than adhering to the conventions of a sterile physics diagram.
 
-- **Batched gradient-opacity trails**: 80 opacity batches (α 0.02 → 0.90) create a smooth, organic fade — like a neon sign slowly dimming
-- **Velocity-based line width**: The tip trail varies from 0.8 px (fast) to 3.0 px (slow), giving the trajectory a painterly "brush stroke" quality
-- **Dual-layer architecture**: Trails (Layer A) and pendulums (Layer B) render independently, preventing visual ghosting while keeping the pendulum geometry crisp
-- **Neon glow halos**: Phase portrait and energy plot lines are drawn twice — a wide low-opacity stroke first, then a narrow bright one on top — giving them that luminous aesthetic
-- **Polar grid HUD**: Dragging shows a protractor-like overlay that fades in and out smoothly. Functional, but also kind of beautiful
+- **Batched gradient-opacity trails**: Eighty opacity batches (α from 0.02 to 0.90) produce a smooth, organic fade reminiscent of neon light decay.
+- **Velocity-dependent line width**: The tip trail varies from 0.8 px (high velocity) to 3.0 px (low velocity), imparting a painterly brush-stroke quality to the trajectory.
+- **Dual-layer architecture**: Trails (Layer A) and pendulum bodies (Layer B) render independently, eliminating visual ghosting while preserving geometric clarity.
+- **Neon glow halos**: Phase portrait and energy plot lines are rendered twice — first as a wide, low-opacity stroke, then as a narrow, bright stroke on top — producing a luminous aesthetic.
+- **Polar grid HUD**: During drag operations, a protractor-style overlay fades in and out smoothly, providing both functional utility and visual appeal.
 
-The result is that the exported PNG actually looks like artwork, not a scientific diagram.
+The exported PNG output resembles artwork rather than a scientific diagram.
 
 ---
 
@@ -42,150 +42,150 @@ The result is that the exported PNG actually looks like artwork, not a scientifi
 
 ### 2.1 Zero-Allocation Physics Engine
 
-This is the one I'm most proud of. I managed to eliminate **all garbage collection pressure** from the hot path through two optimizations:
+The hot path eliminates garbage collection pressure entirely through two complementary optimizations.
 
-#### Cholesky Decomposition (killed Gaussian Elimination)
+#### Cholesky Decomposition (Replacing Gaussian Elimination)
 
-The N×N mass matrix M is symmetric positive-definite — it has this nice Gram-like structure from the Lagrangian. Cholesky decomposition M = L·Lᵀ exploits that:
+The N×N mass matrix M is symmetric positive-definite — a Gram-like structure inherent to the Lagrangian formulation. Cholesky decomposition `M = L·Lᵀ` exploits this property:
 
-| Metric | Gaussian Elimination (before) | Cholesky Decomposition (after) |
-|--------|------|------|
+| Metric | Gaussian Elimination (baseline) | Cholesky Decomposition (optimized) |
+|--------|--------------------------------|-----------------------------------|
 | Operation count | ~2N³/3 flops | ~N³/3 flops |
-| Pivoting | Partial pivoting required | Not needed (SPD) |
-| Memory | Row swapping overhead | In-place write to scratch |
+| Pivoting | Partial pivoting required | Not required (SPD guarantee) |
+| Memory overhead | Row-swapping overhead | In-place write to scratch buffer |
 
-Nearly **2× faster** for N = 8, with zero additional memory.
+For N = 8, this yields approximately **2× speedup** with zero additional memory allocation.
 
 #### JIT-Friendly Float64Array Scratch Buffers
 
-The old `rk4Step()` was creating **16 temporary arrays per sub-step** through `.slice()` and `.map()`. At 8 sub-steps × 4 derivative calls × 60 fps, that's **1,920 temporary array allocations per second**. The GC would pause the UI every few seconds — you could feel it.
+The original `rk4Step()` implementation created **16 temporary arrays per sub-step** through `.slice()` and `.map()` operations. At eight sub-steps, four derivative evaluations, and 60 frames per second, this amounted to **1,920 temporary array allocations per second**, causing periodic UI stuttering due to garbage collection pauses.
 
-I replaced all of that with 17 pre-allocated `Float64Array` buffers per pendulum (about 1.3 KB total), reused every frame across all RK4 sub-steps. **Zero allocations in the hot path.** The JIT compiler sees typed arrays with known shapes and compiles them into fast native SIMD-like loops. The GC stays quiet.
+The solution employs 17 pre-allocated `Float64Array` buffers per pendulum (approximately 1.3 KB total), reused across all RK4 sub-steps every frame. **Zero allocations occur in the hot path.** The JIT compiler recognizes the fixed-shape typed arrays and compiles them into efficient native loops, eliminating GC interference entirely.
 
-I also added a `p.ls_f64` Float64Array mirror that stays in sync with the dynamic `p.ls` array across 4 mutation points (`addJoint`, `removeJoint`, `rebuildChain`, `resizeCanvas`).
+A `p.ls_f64` Float64Array mirror is synchronized with the dynamic `p.ls` array at four mutation points: `addJoint`, `removeJoint`, `rebuildChain`, and `resizeCanvas`.
 
-### 2.2 FPS Guardian — The App That Tunes Itself
+### 2.2 FPS Guardian — Self-Tuning Application
 
-I built a rolling-window frame rate monitor (30 `performance.now()` timestamps) that dynamically adjusts trail length when performance dips:
+A rolling-window frame rate monitor (tracking 30 `performance.now()` timestamps) dynamically adjusts trail length in response to performance fluctuations:
 
-- **FPS < 55** → shrink by 50 (floor: 100)
-- **FPS ≥ 58** → grow by 10 (ceiling: MAX_TRAIL_LENGTH)
-- Throttled every 30 frames so it doesn't oscillate
+- **FPS < 55**: Decrease trail length by 50 (floor: 100)
+- **FPS ≥ 58**: Increase trail length by 10 (ceiling: MAX_TRAIL_LENGTH)
+- Adjustments are throttled to once every 30 frames to prevent oscillation
 
-I separated `MAX_TRAIL_LENGTH` (the user/viewport-defined target) from `TRAIL_LENGTH` (the live adaptive value) so `resizeCanvas` doesn't fight the guardian. It's basically a **closed-loop feedback system for rendering quality** — I haven't seen many Canvas apps do this.
+`MAX_TRAIL_LENGTH` (the user-defined or viewport-defined target) is decoupled from `TRAIL_LENGTH` (the live adaptive value), ensuring that `resizeCanvas` operations do not conflict with the guardian's adjustments. This constitutes a **closed-loop feedback system for rendering quality** — a design pattern uncommon in Canvas applications.
 
 ### 2.3 Path2D Batch Rendering
 
-The old trail rendering code was calling `beginPath()` + `moveTo()` + `lineTo()` + `stroke()` for every single segment — about 5 JS→native crossings per segment. I changed the non-velocity branch to build a single `Path2D` object per opacity batch and call `stroke()` once. That's about 2 crossings regardless of how many segments are in the batch.
+The previous trail rendering implementation invoked `beginPath()` + `moveTo()` + `lineTo()` + `stroke()` for every segment, incurring approximately five JavaScript-to-native crossings per segment. The optimized implementation constructs a single `Path2D` object per opacity batch and invokes `stroke()` once, reducing the crossing count to approximately two regardless of segment count within the batch.
 
 ### 2.4 Drag HUD with Opacity Animation
 
-When you drag a bob, a polar grid overlay appears — a dashed circle showing the bob's arc, 24 radial lines at 15° increments for snap reference, and a bright dot at the snap position. It fades in over ~125 ms and out over ~33 ms. I animate `globalAlpha` frame-by-frame, which is simple but effective and avoids CSS animation overhead.
+When dragging a bob, a polar grid overlay appears: a dashed circle indicating the bob's arc, 24 radial lines at 15° increments for snap reference, and a bright dot marking the snap position. The overlay fades in over approximately 125 ms and out over approximately 33 ms. The `globalAlpha` property is animated frame-by-frame — a simple yet effective approach that avoids CSS animation overhead.
 
 ### 2.5 NaN Safety Net with Auto-Reset
 
-I couldn't prevent numerical explosion — for a chaotic system at extreme angles, that's impossible. So instead, I built a **detect-and-recover** pattern:
+Numerical explosion is an inherent risk for chaotic systems at extreme angles. The implementation employs a **detect-and-recover** pattern:
 
 ```js
 function isPendulumInvalid(p) {
-    // Checks thetas, omegas, and positions for NaN/Infinity
-    // O(N) per frame — negligible cost
+    // Validates thetas, omegas, and positions for NaN/Infinity
+    // O(N) per frame — negligible computational cost
 }
 ```
 
-When NaN is detected, `safeResetPendulum()` zeroes velocities, resets angles to 135°, and clears trails. The pendulum reappears in a safe state on the very next frame. The user sees a brief "glitch" instead of a crash.
+Upon NaN detection, `safeResetPendulum()` zeroes velocities, resets angles to 135°, and clears trails. The pendulum reappears in a safe state on the subsequent frame. The user perceives a brief visual reset rather than a system crash.
 
-This is paired with hard caps (`MAX_LINKS = 8`, `MAX_PENDULUMS = 8`) that keep users out of the near-singular region of the mass matrix.
+This mechanism is complemented by hard caps (`MAX_LINKS = 8`, `MAX_PENDULUMS = 8`) that prevent users from entering the near-singular region of the mass matrix.
 
-### 2.6 State Serialization & URL Sharing
+### 2.6 State Serialization and URL Sharing
 
-I serialize the full simulation state into compact JSON (single-letter keys to keep URLs short), encode it as URL-safe Base64, and store it in `window.location.hash`. Restoration validates every field with `isFinite()` and range clamping, and falls back gracefully if the data is corrupt. The "Share" button copies the URL to clipboard with animated feedback — **no backend, no database, no service**.
+The complete simulation state is serialized into compact JSON (using single-letter keys to minimize URL length), encoded as URL-safe Base64, and stored in `window.location.hash`. Restoration validates every field with `isFinite()` and range clamping, with graceful fallback for corrupted data. The "Share" button copies the URL to the clipboard with animated feedback — **no backend, no database, no external service**.
 
-I wired `saveStateToURL()` into 10 mutation points so the URL is always share-ready after any interaction.
+`saveStateToURL()` is wired into ten mutation points, ensuring the URL remains shareable after any interaction.
 
-### 2.7 In-App Wiki Reader
+### 2.7 In-Application Wiki Reader
 
-The Guide modal started as a simple help screen, then I extended it into a recursive markdown wiki reader:
-- Clicks on `.md` links inside rendered markdown are intercepted and loaded in-app via `fetch()`
-- A back-navigation bar shows "← Back to Controls" or "← Back to Guide Index" depending on depth
-- It works to arbitrary depth (e.g., `README.md → AI_DISCLOSURE.md → AI_DISCLOSURE_ZH.md`)
-- `.md` links stay in-app; external links still get `target="_blank"`
+The Guide modal evolved from a simple help screen into a recursive Markdown wiki reader:
+- Clicks on `.md` links within rendered Markdown are intercepted and loaded in-application via `fetch()`.
+- A back-navigation bar displays "← Back to Controls" or "← Back to Guide Index" depending on navigation depth.
+- Navigation supports arbitrary depth (e.g., `README.md → AI_DISCLOSURE.md → AI_DISCLOSURE_ZH.md`).
+- `.md` links remain in-application; external links open with `target="_blank"`.
 
-This turned the project's documentation into something you can explore without leaving the visualizer.
+This architecture enables users to browse project documentation without leaving the visualizer.
 
 ### 2.8 Clickable Angle Display
 
-The angle display in the top-left corner started as static text. I made it into a **fully interactive pendulum selector**:
+The angle display in the top-left corner was transformed from static text into a **fully interactive pendulum selector**:
 
-- Each pendulum renders as a clickable `<div>` with a `data-idx` attribute
-- Clicking selects the pendulum — updates the selection ring, contextual menu, and metrics plots
-- I used `pointerdown` event delegation instead of `click` to avoid `stopPropagation()` interference from plot canvas handlers
-- A brief background flash confirms the click
+- Each pendulum renders as a clickable `<div>` with a `data-idx` attribute.
+- Clicking selects the pendulum, updating the selection ring, contextual menu, and metrics plots simultaneously.
+- `pointerdown` event delegation is employed instead of `click` to avoid interference from `stopPropagation()` in plot canvas handlers.
+- A brief background flash provides visual confirmation of the selection.
 
-This gives users a keyboard-and-touch-free way to switch pendulums, especially handy on mobile or when the metrics panel is open.
+This design provides a keyboard-free and touch-free mechanism for switching pendulums, particularly valuable on mobile devices or when the metrics panel is open.
 
 ### 2.9 Per-Pendulum Metrics with Independent Buffers
 
-Each pendulum owns its own 300-point ring buffer for phase space and energy data. `collectMetrics()` iterates all visible pendulums independently. The tracked pendulum for plots follows whichever is selected (or falls back to `pendulums[0]`). So:
+Each pendulum maintains its own 300-point ring buffer for phase space and energy data. `collectMetrics()` iterates over all visible pendulums independently. The tracked pendulum for plots follows the current selection (or defaults to `pendulums[0]`). Consequently:
 
-- Switching selection **seamlessly** updates both plots
-- Deleting a pendulum automatically drops its data
-- N-link pendulums use the **general** N-pendulum Lagrangian energy formulas
+- Switching selection **seamlessly** updates both plots.
+- Deleting a pendulum automatically discards its associated data.
+- N-link pendulums employ the **general** N-pendulum Lagrangian energy formulas.
 
 ### 2.10 Mobile Hardening
 
-I didn't want mobile to be an afterthought:
-- `{ passive: false }` + conditional `preventDefault()` stops page bounce during drag
-- `touch-action: none` on canvases tells the compositor to never intercept touch gestures
-- `overscroll-behavior: none` on root elements
-- A collapsible settings panel (gear icon) saves precious screen space
-- Trail length is halved to 600 on mobile
-- Everything adjusts via a single `@media (max-width: 768px)` block
+- `{ passive: false }` with conditional `preventDefault()` prevents page bounce during drag operations.
+- `touch-action: none` on canvases instructs the compositor to never intercept touch gestures.
+- `overscroll-behavior: none` on root elements suppresses elastic overscroll.
+- A collapsible settings panel (gear icon) conserves screen space.
+- Trail length is halved to 600 on mobile devices.
+- All responsive adjustments are consolidated within a single `@media (max-width: 768px)` block.
 
 ---
 
-## 3. Design Philosophy Innovations
+## 3. Design Philosophy
 
 ### 3.1 Graduated Complexity
 
-I wanted the app to work for people at different comfort levels without them feeling locked in:
-- **Casual**: Open it, watch the pretty trails, press Space to pause
-- **Curious**: Drag bobs, toggle chaos, see the butterfly effect
-- **Explorer**: Add joints to make N-link chains, spawn multiple pendulums
-- **Analyst**: Open the metrics panel, study phase portraits and energy conservation
-- **Artist**: Configure colors, hide/show pendulums, export high-res PNG artwork
-- **Power user**: Share configurations via URL, use keyboard shortcuts for everything
+The application accommodates users at varying levels of expertise without imposing mode restrictions:
 
-No mode-locking — every feature is discoverable from the base state.
+- **Casual**: Open the application, observe the trails, press Space to pause.
+- **Curious**: Drag bobs, toggle chaos mode, observe the butterfly effect.
+- **Explorer**: Add joints to construct N-link chains, spawn multiple pendulums.
+- **Analyst**: Open the metrics panel, study phase portraits and energy conservation.
+- **Artist**: Configure colors, toggle pendulum visibility, export high-resolution PNG artwork.
+- **Power user**: Share configurations via URL, employ keyboard shortcuts for all operations.
+
+No mode-locking is imposed; every feature is discoverable from the base state.
 
 ### 3.2 Zero External Dependencies
 
-The entire thing — physics engine, rendering engine, UI framework, plotting library, help system, state serialization — is built from **vanilla HTML, CSS, and JavaScript**. No frameworks, no build tools, no package.json. This matters because:
+The entire system — physics engine, rendering engine, UI framework, plotting library, help system, and state serialization — is built from **vanilla HTML, CSS, and JavaScript**. No frameworks, no build tools, no `package.json`. This yields several concrete advantages:
 
-- **Instant load**: No CDN requests, no bundle parsing, no framework init
-- **Portability**: Works offline, works from `file://`, works on any HTTP server
-- **Longevity**: No framework churn — this code will run in browsers ten years from now
-- **Performance**: No abstraction overhead, no virtual DOM, no reactive tax
+- **Instant load**: No CDN requests, no bundle parsing, no framework initialization overhead.
+- **Portability**: Functions offline, from `file://` protocol, and on any HTTP server.
+- **Longevity**: Immune to framework churn — this code will execute in browsers a decade from now.
+- **Performance**: No abstraction overhead, no virtual DOM, no reactive system tax.
 
 ### 3.3 Documentation as Architecture
 
-I keep parallel design records in English and Chinese that document **every decision, bug, and fix** throughout development. This isn't just docs — it's a design philosophy that treats the development story as part of the project artifact.
+Parallel design records in English and Chinese document **every decision, bug, and fix** throughout the development process. This approach treats the development narrative as an integral component of the project artifact.
 
 ---
 
 ## 4. Summary
 
-| Domain | What I Did | Why It Matters |
-|--------|-----------|----------------|
-| Physics | Exact Lagrangian RK4 with N×N mass matrix | Real chaotic divergence, 0.0000% energy drift |
+| Domain | Implementation | Significance |
+|--------|---------------|------------|
+| Physics | Exact Lagrangian RK4 with N×N mass matrix | Genuine chaotic divergence, 0.0000% energy drift |
 | Solver | Cholesky decomposition + Float64Array scratch buffers | Zero GC pressure, ~2× faster solve |
 | Performance | FPS Guardian — adaptive trail length | Self-tuning rendering quality |
 | Rendering | Path2D batch + gradient-opacity trails | Neon-sign visual quality |
 | Interaction | Polar grid drag HUD with opacity animation | Intuitive angle setting |
-| Engineering | NaN auto-reset safety net | Crash-free at N=8 |
+| Engineering | NaN auto-reset safety net | Crash-free operation at N=8 |
 | Sharing | State serialization to URL hash | Shareable configurations |
-| UI | In-app wiki reader | Self-documenting application |
-| Mobile | Full touch hardening + responsive layout | Works on any device |
+| UI | In-application wiki reader | Self-documenting application |
+| Mobile | Full touch hardening + responsive layout | Universal device compatibility |
 | Architecture | Single-file vanilla JS application | Zero dependencies, instant load |
 
-I wanted to show that **creative web development** can achieve professional quality — both in performance and aesthetics — using nothing but what the browser already gives you.
+This project demonstrates that **creative web development** can achieve professional quality — in both performance and aesthetics — using only the capabilities native to the browser.
