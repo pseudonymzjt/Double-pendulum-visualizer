@@ -213,8 +213,8 @@ function buildHelpHTML() {
     const tips = H.tips.map(t => `<li>${t}</li>`).join('');
     const designLinks = H.designTitle ? `<h3>${H.designTitle}</h3>
 <ul>
-  <li><a class="design-doc-link" href="./creativity.txt">${H.designCreativity}</a></li>
-  <li><a class="design-doc-link" href="./difficulty.txt">${H.designDifficulty}</a></li>
+  <li><a class="design-doc-link" href="${currentLang === 'zh' ? './creativity_zh.txt' : './creativity.txt'}">${H.designCreativity}</a></li>
+  <li><a class="design-doc-link" href="${currentLang === 'zh' ? './difficulty_zh.txt' : './difficulty.txt'}">${H.designDifficulty}</a></li>
 </ul>` : '';
     return `<h2>${H.title}</h2>
 <table><thead><tr>${H.th.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>

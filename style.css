@@ -610,6 +610,17 @@ html, body {
     text-decoration: underline;
 }
 
+/* Design document links in help modal — muted, no blue glare */
+.design-doc-link {
+    color: rgba(255, 255, 255, 0.5);
+    text-decoration: none;
+    transition: color 0.15s;
+}
+.design-doc-link:hover {
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: underline;
+}
+
 /* Custom scrollbar for modal */
 #help-modal-content::-webkit-scrollbar {
     width: 6px;
