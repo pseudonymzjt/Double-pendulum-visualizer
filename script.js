@@ -126,6 +126,9 @@ const I18N = {
             footer: 'View Full Guide →',
             backBtn: '← Back to Controls',
             guideIndex: '← Back to Guide Index',
+            designTitle: 'Design Documents',
+            designCreativity: 'Creativity Analysis — innovations and novel approaches',
+            designDifficulty: 'Difficulties Encountered — 18 engineering challenges',
             loading: 'Loading README…',
             error: 'Failed to load document.',
             errorHint: 'Please check if the file exists on the server and matches case-sensitivity.',
@@ -189,6 +192,9 @@ const I18N = {
             footer: '查看完整指南 →',
             backBtn: '← 返回操作说明',
             guideIndex: '← 返回指南',
+            designTitle: '设计文档',
+            designCreativity: '创新性分析 — 思路与实现中的创新之处',
+            designDifficulty: '遇到的困难 — 18 项工程挑战与解决方案',
             loading: '正在加载 README…',
             error: '文档加载失败。',
             errorHint: '请检查文件是否存在于服务器上，以及文件名大小写是否匹配。',
@@ -205,11 +211,17 @@ function buildHelpHTML() {
     const rows = H.rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('');
     const ctxRows = H.ctxRows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('');
     const tips = H.tips.map(t => `<li>${t}</li>`).join('');
+    const designLinks = H.designTitle ? `<h3>${H.designTitle}</h3>
+<ul>
+  <li><a class="design-doc-link" href="./creativity.txt">${H.designCreativity}</a></li>
+  <li><a class="design-doc-link" href="./difficulty.txt">${H.designDifficulty}</a></li>
+</ul>` : '';
     return `<h2>${H.title}</h2>
 <table><thead><tr>${H.th.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
 <h3>${H.ctxTitle} <span class="subtitle">${H.ctxSub}</span></h3>
 <table><thead><tr>${H.ctxTH.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${ctxRows}</tbody></table>
 <h3>${H.tipsTitle}</h3><ul>${tips}</ul>
+${designLinks}
 <p class="help-footer"><span class="help-guide-link">${H.footer}</span></p>`;
 }
 
@@ -1598,6 +1610,8 @@ on('help-close', 'click', toggleHelpModal);
 on('help-body', 'click', (e) => {
     const guideLink = e.target.closest('.help-guide-link');
     if (guideLink) { e.preventDefault(); fetchAndShowReadme(); return; }
+    const designDoc = e.target.closest('.design-doc-link');
+    if (designDoc) { e.preventDefault(); loadAndRenderMD(designDoc.getAttribute('href')); return; }
     const backBtn = e.target.closest('.help-back-btn');
     if (backBtn) { e.preventDefault(); showHelpOverview(); return; }
     const backGuide = e.target.closest('.help-back-guide');

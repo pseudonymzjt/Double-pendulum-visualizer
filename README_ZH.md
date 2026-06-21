@@ -53,15 +53,26 @@
 
 ```
 Double-Pendulum-Visualizer/
-├── index.html        # HTML 外壳，含 HiDPI 视口元标签
-├── style.css         # 全屏暗色主题、控制栏与菜单样式
-├── script.js         # 全部逻辑：物理引擎、渲染、控制、UI
-├── Plan.md           # 项目计划（各阶段）
-├── THOUGHTS.md       # 设计记录与决策
-├── AI_DISCLOSURE.md  # AI 公开声明（英文）
-├── AI_DISCLOSURE_ZH.md # AI 公开声明（中文）
-└── README.md
+├── index.html            # HTML 外壳，含 HiDPI 视口元标签
+├── style.css             # 全屏暗色主题、控制栏与菜单样式
+├── script.js             # 全部逻辑：物理引擎、渲染、控制、UI
+├── Plan.md               # 项目计划（各阶段）
+├── THOUGHTS.md           # Design record and decisions
+├── THOUGHTS_ZH.md        # 设计记录（中文）
+├── creativity.txt        # Creativity analysis (Markdown)
+├── creativity_zh.txt     # 创新性分析（Markdown）
+├── difficulty.txt        # Difficulties encountered (Markdown)
+├── difficulty_zh.txt     # 遇到的困难（Markdown）
+├── README.md
+├── README_ZH.md
+├── AI_DISCLOSURE.md
+└── AI_DISCLOSURE_ZH.md
 ```
+
+> 📖 **[创新性分析](creativity_zh.txt)** — 物理、渲染、交互与工程设计的创新之处。  
+> 🧗 **[遇到的困难](difficulty_zh.txt)** — 从 Verlet 阻尼到 CSS 优先级冲突等 18 项工程挑战。
+
+你也可以在应用内的**指南**（`📖 指南`）弹窗中浏览这些文档。
 
 **双层画布架构**：
 - **层 A**（`#canvas-a`）：轨迹层——每帧清除后根据存储的点数组重新绘制。

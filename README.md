@@ -53,13 +53,26 @@ Click `中` / `EN` in the bottom control bar to switch between English and Simpl
 
 ```
 Double-Pendulum-Visualizer/
-├── index.html        # HTML shell with HiDPI meta viewport
-├── style.css         # Full-viewport dark theme, controls & menus
-├── script.js         # Everything: physics, rendering, controls, UI
-├── Plan.md           # Project plan (all stages)
-├── THOUGHTS.md       # Design record and decisions
-└── README.md
+├── index.html            # HTML shell with HiDPI meta viewport
+├── style.css             # Full-viewport dark theme, controls & menus
+├── script.js             # Everything: physics, rendering, controls, UI
+├── Plan.md               # Project plan (all stages)
+├── THOUGHTS.md           # Design record and decisions
+├── THOUGHTS_ZH.md        # 设计记录（中文）
+├── creativity.txt        # Creativity analysis (Markdown)
+├── creativity_zh.txt     # 创新性分析（Markdown）
+├── difficulty.txt        # Difficulties encountered (Markdown)
+├── difficulty_zh.txt     # 遇到的困难（Markdown）
+├── README.md
+├── README_ZH.md
+├── AI_DISCLOSURE.md
+└── AI_DISCLOSURE_ZH.md
 ```
+
+> 📖 **[Creativity Analysis](creativity.txt)** — innovations in physics, rendering, interaction, and engineering design.  
+> 🧗 **[Difficulties Encountered](difficulty.txt)** — 18 engineering challenges from Verlet damping to CSS specificity wars.
+
+You can also browse these documents inside the app via the **Guide** (`📖 Guide`) modal.
 
 **Dual-Layer Canvas**:
 - **Layer A** (`#canvas-a`): Trajectory trails — cleared and fully redrawn each frame from stored point arrays.
