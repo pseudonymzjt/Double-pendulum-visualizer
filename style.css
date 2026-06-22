@@ -70,7 +70,7 @@ html, body {
     z-index: 4;
     text-align: center;
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.2);
     pointer-events: none;
     user-select: none;
@@ -103,10 +103,10 @@ html, body {
     left: 14px;
     z-index: 4;
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
-    font-size: 11px;
+    font-size: 12px;
     color: rgba(255, 255, 255, 0.35);
     user-select: none;
-    line-height: 1.7;
+    line-height: 1.6;
     background: rgba(10, 10, 15, 0.4);
     padding: 4px 6px;
     border-radius: 8px;
@@ -124,7 +124,7 @@ html, body {
     right: 14px;
     z-index: 4;
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.5);
     user-select: none;
     background: rgba(10, 10, 15, 0.4);
@@ -327,7 +327,7 @@ html, body {
 
 .plot-title {
     font-family: 'SF Mono', 'Fira Code', 'Segoe UI', monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.5);
     user-select: none;
     letter-spacing: 0.4px;
@@ -355,7 +355,7 @@ html, body {
         bottom: 12px;
     }
     #controls button {
-        font-size: 9px;
+        font-size: 11px;
         padding: 1px 3px;
     }
     #controls button:first-child {
@@ -364,7 +364,7 @@ html, body {
 
     /* Angle display — smaller */
     #angle-display {
-        font-size: 9px;
+        font-size: 11px;
         padding: 3px 4px;
         max-height: calc(100vh - 80px);
     }
@@ -386,11 +386,11 @@ html, body {
     }
     .param-row label {
         width: 40px;
-        font-size: 9px;
+        font-size: 11px;
     }
     .param-value {
         width: 38px;
-        font-size: 9px;
+        font-size: 11px;
     }
     .param-row input[type="range"] {
         min-width: 40px;
