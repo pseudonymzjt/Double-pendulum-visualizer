@@ -7,6 +7,7 @@
 [![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat-square&logo=css3&logoColor=white)](style.css)
 [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)](script.js)
 [![AI-Assisted](https://img.shields.io/badge/AI-Assisted-blue?style=flat-square)](AI_DISCLOSURE.md)
+[![Design Record](https://img.shields.io/badge/Design%20Record-THOUGHTS-8A2BE2?style=flat-square)](THOUGHTS.md)
 
 A high-performance, minimalist HTML5 Canvas web application that visualises the beautiful and chaotic motion of double pendulums. No libraries, no frameworks — just vanilla HTML, CSS, and JavaScript.
 

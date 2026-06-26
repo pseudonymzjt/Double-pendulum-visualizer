@@ -1,5 +1,7 @@
 # Difficulties Encountered — Chaotic Art: Double Pendulum Visualizer
 
+> This document was AI-generated. See [THOUGHTS.md](./THOUGHTS.md) for detailed reasoning.
+
 > A chronological record of bugs, dead ends, and resolutions encountered during development. Eighteen issues are documented, spanning the Verlet prototype through the final performance optimization pass.
 
 ---

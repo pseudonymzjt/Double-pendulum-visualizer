@@ -7,6 +7,7 @@
 [![CSS3](https://img.shields.io/badge/CSS3-1572B6?style=flat-square&logo=css3&logoColor=white)](style.css)
 [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)](script.js)
 [![AI辅助开发](https://img.shields.io/badge/AI-%E8%BE%85%E5%8A%A9%E5%BC%80%E5%8F%91-blue?style=flat-square)](AI_DISCLOSURE_ZH.md)
+[![设计记录](https://img.shields.io/badge/%E8%AE%BE%E8%AE%A1%E8%AE%B0%E5%BD%95-THOUGHTS-8A2BE2?style=flat-square)](THOUGHTS_ZH.md)
 
 一款高性能、极简主义的 HTML5 Canvas 网页应用，用于可视化双摆的优美混沌运动。无外部库、无框架——纯原生 HTML、CSS 和 JavaScript。
 

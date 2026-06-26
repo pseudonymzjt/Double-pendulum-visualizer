@@ -1,5 +1,7 @@
 # Creativity Notes — Double Pendulum Visualizer
 
+> This document was AI-generated. See [THOUGHTS.md](./THOUGHTS.md) for detailed reasoning.
+
 > An analysis of the conceptual and technical innovations underlying this project.
 
 ## 1. Conceptual Innovations
