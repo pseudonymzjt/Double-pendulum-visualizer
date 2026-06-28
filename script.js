@@ -93,7 +93,7 @@ const I18N = {
         addJointTitle: 'Add joint',
         addJointTitleMax: 'Maximum bob limit reached for physical stability',
         copyright: 'MIT © pseudonymzjt',
-        sourceLink: 'Source on GitHub',
+        sourceLink: 'Source on GitHub - reach me at zhoujintian25@mail.ucas.ac.cn and follow my Github account if you like this!',
         help: {
             title: 'Controls',
             th: ['Button', 'Keyboard', 'Action'],
@@ -159,7 +159,7 @@ const I18N = {
         addJointTitle: '添加关节',
         addJointTitleMax: '已达到最大关节数量限制，以保证物理稳定性',
         copyright: 'MIT © pseudonymzjt',
-        sourceLink: 'GitHub 源代码',
+        sourceLink: 'GitHub 源代码 - 通过zhoujintian25@mails.ucas.ac.cn联系我，多多关注我的Github账号喵',
         help: {
             title: '操作说明',
             th: ['按钮', '键盘', '动作'],
