@@ -1,7 +1,7 @@
 # Creativity Notes — Double Pendulum Visualizer
 
 > This document was AI-generated. See [THOUGHTS.md](./THOUGHTS.md) for detailed reasoning.
-> To learn how AI and human collaborated, see [AI_DISCLOSURE.md](./AI_DISCLOSURE.md).
+> To learn how AI and human collaborated, see [AI_DISCLOSURE.md](./AI_DISCLOSURE.md) .
 
 > An analysis of the conceptual and technical innovations underlying this project.
 
