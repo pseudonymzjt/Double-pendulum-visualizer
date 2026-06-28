@@ -1,6 +1,7 @@
 # 创新性分析 —— 双摆可视化器
 
 > 本文档由 AI 生成，详细内容请查看 [THOUGHTS_ZH.md](./THOUGHTS_ZH.md)。
+> 欲了解 AI 与人类如何协作，请查看 [AI_DISCLOSURE_ZH.md](./AI_DISCLOSURE_ZH.md)。
 
 > 本文档系统梳理了本项目在概念层面与实现层面的设计选择。
 
